@@ -1,0 +1,119 @@
+{
+  "projectType": "saas",
+  "projectName": "PDF AI",
+  "projectDescription": "AI-powered PDF assistant that enables intelligent conversations with PDF documents using RAG architecture, vector embeddings, and OpenAI GPT.",
+  "theme": "palm",
+  "primaryColor": "#040404",
+  "lightColor": null,
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "how-it-works"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/pdf-upload",
+              "features/ai-chat",
+              "features/subscription"
+            ]
+          },
+          {
+            "group": "User Guide",
+            "pages": [
+              "guide/uploading-pdfs",
+              "guide/chatting-with-pdfs",
+              "guide/managing-subscriptions"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Technical",
+        "groups": [
+          {
+            "group": "Architecture",
+            "pages": [
+              "technical/overview",
+              "technical/rag-pipeline",
+              "technical/vector-database"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/openai",
+              "integrations/pinecone",
+              "integrations/aws-s3",
+              "integrations/clerk-auth",
+              "integrations/stripe",
+              "integrations/neon-database"
+            ]
+          },
+          {
+            "group": "API Reference",
+            "pages": [
+              "api/overview",
+              "api/chat",
+              "api/create-chat",
+              "api/messages"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Help",
+            "pages": [
+              "resources/faq",
+              "resources/troubleshooting",
+              "resources/pricing"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/setup",
+              "development/environment-variables",
+              "development/deployment"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AI-powered chat with PDF documents using OpenAI GPT",
+    "Semantic search using vector embeddings and Pinecone",
+    "Retrieval Augmented Generation (RAG) for context-aware responses",
+    "PDF upload and storage with AWS S3",
+    "User authentication via Clerk",
+    "Subscription management with Stripe",
+    "Real-time streaming responses",
+    "Edge runtime for optimal performance"
+  ],
+  "publicApiSurface": [
+    "POST /api/chat - Stream AI responses for chat messages",
+    "POST /api/create-chat - Create new chat session with PDF",
+    "POST /api/get-messages - Retrieve chat message history",
+    "POST /api/stripe - Handle Stripe checkout sessions",
+    "POST /api/webhook - Process Stripe webhook events",
+    "uploadToS3(file) - Upload PDF files to AWS S3",
+    "getS3Url(fileKey) - Generate S3 file URLs",
+    "loadS3IntoPinecone(fileKey) - Process and vectorize PDF content",
+    "getEmbeddings(text) - Generate text embeddings via OpenAI",
+    "getContext(query, fileKey) - Retrieve relevant PDF context for queries",
+    "checkSubscription() - Verify user subscription status"
+  ]
+}
