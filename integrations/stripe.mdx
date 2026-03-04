@@ -25,7 +25,7 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 
 ### Webhook Configuration
 
-1. Set up a webhook endpoint at `/api/webhook/stripe` in your Stripe Dashboard
+1. Set up a webhook endpoint at `/api/webhook` in your Stripe Dashboard
 2. Subscribe to these events:
    - `checkout.session.completed`
    - `invoice.payment_succeeded`
@@ -213,7 +213,7 @@ export async function POST(req: Request) {
 
 ## Webhook Handler
 
-Process Stripe events in `/api/webhook/stripe/route.ts`:
+Process Stripe events in `/api/webhook/route.ts`:
 
 ```typescript
 import { stripe } from "@/lib/stripe";
@@ -330,6 +330,6 @@ try {
 Use Stripe CLI to test webhooks locally:
 
 ```bash
-stripe listen --forward-to localhost:3000/api/webhook/stripe
+stripe listen --forward-to localhost:3000/api/webhook
 stripe trigger checkout.session.completed
 ```
