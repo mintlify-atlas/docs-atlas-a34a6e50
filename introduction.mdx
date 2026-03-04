@@ -1,0 +1,127 @@
+---
+title: Introduction
+description: Transform how you interact with PDFs using AI-powered conversations
+---
+
+# Welcome to PDF AI
+
+PDF AI is an intelligent document assistant that lets you have natural conversations with your PDF files. Upload any PDF and ask questions, get summaries, or extract insights—all powered by advanced AI technology.
+
+## What is PDF AI?
+
+PDF AI combines cutting-edge AI models with vector database technology to understand and respond to questions about your documents. Instead of manually searching through pages, simply ask questions in natural language and get accurate, contextual answers instantly.
+
+<Info>
+PDF AI uses **GPT-4** and **Pinecone Vector Database** to deliver fast, accurate responses based on your document's actual content.
+</Info>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Instant PDF Upload" icon="upload">
+    Drag and drop any PDF up to 10MB. Files are securely processed and ready for chat in seconds.
+  </Card>
+  
+  <Card title="AI-Powered Chat" icon="messages">
+    Ask questions in natural language and receive intelligent, context-aware responses from your documents.
+  </Card>
+  
+  <Card title="Vector Search" icon="magnifying-glass">
+    Leverage semantic search to find relevant information across your entire document instantly.
+  </Card>
+  
+  <Card title="Real-Time Streaming" icon="bolt">
+    Get responses as they're generated with streaming AI responses—no waiting for complete answers.
+  </Card>
+</CardGroup>
+
+## Why PDF AI?
+
+### Save Time
+Stop scrolling through lengthy documents. PDF AI finds the information you need in seconds, extracting relevant context from anywhere in your PDF.
+
+### Understand Better
+Ask follow-up questions, request clarifications, or get summaries. PDF AI maintains conversation context for natural, flowing interactions.
+
+### Work Smarter
+Whether you're researching, studying, or analyzing documents, PDF AI helps you extract insights faster and more efficiently.
+
+<Warning>
+PDF AI works best with text-based PDFs. Scanned documents or image-heavy PDFs may have limited functionality.
+</Warning>
+
+## How It Works
+
+PDF AI uses a sophisticated RAG (Retrieval-Augmented Generation) architecture:
+
+1. **Upload**: Your PDF is uploaded to secure cloud storage
+2. **Processing**: The document is split into chunks and converted to vector embeddings
+3. **Storage**: Embeddings are stored in Pinecone vector database for fast retrieval
+4. **Query**: When you ask a question, we find the most relevant chunks
+5. **Response**: GPT-4 generates an accurate answer using the retrieved context
+
+<Note>
+Learn more about the technical architecture in our [How It Works](/how-it-works) guide.
+</Note>
+
+## Technology Stack
+
+PDF AI is built with modern, production-ready technologies:
+
+- **Next.js 13** - React framework with App Router
+- **OpenAI GPT-4** - Advanced language model for intelligent responses
+- **Pinecone** - Vector database for semantic search
+- **LangChain** - Framework for PDF processing and document splitting
+- **Vercel Edge Functions** - Ultra-fast serverless compute
+- **AWS S3** - Secure, scalable file storage
+- **Clerk** - Authentication and user management
+
+## Getting Started
+
+Ready to chat with your PDFs? Get started in minutes:
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Upload your first PDF and start chatting in under 60 seconds
+  </Card>
+  
+  <Card title="How It Works" icon="brain" href="/how-it-works">
+    Deep dive into the RAG architecture and AI technology
+  </Card>
+</CardGroup>
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="Academic Research">
+    Quickly extract information from research papers, textbooks, and academic journals. Ask specific questions about methodologies, findings, or citations.
+  </Accordion>
+  
+  <Accordion title="Legal Document Review">
+    Navigate contracts, legal briefs, and case files efficiently. Find specific clauses, definitions, or relevant precedents.
+  </Accordion>
+  
+  <Accordion title="Business Analysis">
+    Analyze reports, whitepapers, and business documents. Extract key metrics, insights, and recommendations.
+  </Accordion>
+  
+  <Accordion title="Study & Learning">
+    Get help understanding textbooks, study materials, and course documents. Ask for explanations, summaries, or quiz yourself.
+  </Accordion>
+</AccordionGroup>
+
+## What's Next?
+
+<Steps>
+  <Step title="Upload Your First PDF">
+    Follow our [Quickstart Guide](/quickstart) to upload a PDF and start your first conversation
+  </Step>
+  
+  <Step title="Explore the Technology">
+    Learn about [How It Works](/how-it-works) behind the scenes with RAG and vector embeddings
+  </Step>
+  
+  <Step title="Upgrade to Pro">
+    Get increased upload limits and faster processing with a Pro subscription
+  </Step>
+</Steps>

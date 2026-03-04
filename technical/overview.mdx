@@ -1,0 +1,284 @@
+---
+title: "Architecture Overview"
+description: "Comprehensive overview of the PDF AI system architecture, tech stack, and data flow"
+---
+
+## System Architecture
+
+PDF AI is built as a full-stack Next.js application that leverages AI and vector databases to enable intelligent conversations with PDF documents. The architecture follows a serverless edge-first approach for optimal performance and scalability.
+
+### High-Level Components
+
+The system consists of four main architectural layers:
+
+1. **Frontend Layer** - Next.js 13+ with React Server Components
+2. **API Layer** - Edge Runtime API routes for low-latency responses
+3. **Data Layer** - PostgreSQL (via Drizzle ORM) for structured data
+4. **AI/ML Layer** - OpenAI embeddings and GPT-4 for semantic understanding
+
+<Info>
+The application runs on Vercel's Edge Runtime, ensuring global distribution and sub-100ms response times for most operations.
+</Info>
+
+## Tech Stack
+
+### Core Framework
+
+- **Next.js 13+** - React framework with App Router
+- **TypeScript** - Type-safe development
+- **Edge Runtime** - Deployed on Vercel Edge Network
+
+### AI & Vector Database
+
+- **OpenAI API** - `text-embedding-ada-002` for embeddings, `gpt-4-1106-preview` for chat
+- **Pinecone** - Serverless vector database for semantic search
+- **LangChain** - Document loading and text splitting utilities
+
+### Data & Storage
+
+- **PostgreSQL** - Relational database for chats, messages, and user data
+- **Drizzle ORM** - Type-safe database queries
+- **AWS S3** - Object storage for PDF files
+
+### Authentication & Payments
+
+- **Clerk** - User authentication and management
+- **Stripe** - Subscription billing
+
+## Data Flow
+
+### Document Upload Flow
+
+When a user uploads a PDF document, the following sequence occurs:
+
+```mermaid
+User → S3 → PDF Processing → Text Extraction → Chunking → Embedding → Pinecone
+```
+
+<Accordion title="Step-by-step document processing">
+
+1. **Upload to S3**: PDF file is uploaded to AWS S3 bucket
+2. **Download**: Server downloads PDF from S3 (src/lib/s3-server.ts:3)
+3. **Load PDF**: LangChain PDFLoader extracts text from all pages
+4. **Split Documents**: Text is chunked using RecursiveCharacterTextSplitter
+5. **Generate Embeddings**: Each chunk is converted to a 1536-dimension vector
+6. **Store in Pinecone**: Vectors are upserted with metadata (page number, text)
+7. **Create Chat**: Database record created linking user to document
+
+</Accordion>
+
+### Query Flow
+
+When a user asks a question about their document:
+
+```mermaid
+User Question → Embedding → Vector Search → Context Retrieval → GPT-4 → Streaming Response
+```
+
+<CodeGroup>
+
+```typescript Chat API Route
+// src/app/api/chat/route.ts
+export async function POST(req: NextRequest) {
+  const { messages, chatId } = await req.json();
+  
+  // 1. Fetch chat metadata
+  const _chats = await db.select().from(chats).where(eq(chats.id, chatId));
+  const fileKey = _chats[0].fileKey;
+  
+  // 2. Get relevant context from vector DB
+  const lastMessage = messages[messages.length - 1];
+  const context = await getContext(lastMessage.content, fileKey);
+  
+  // 3. Build prompt with context
+  const prompt = {
+    role: "system",
+    content: `AI assistant...
+    START CONTEXT BLOCK
+    ${context}
+    END OF CONTEXT BLOCK
+    ...`
+  };
+  
+  // 4. Stream response from GPT-4
+  const response = await openai.createChatCompletion({
+    model: "gpt-4-1106-preview",
+    messages: [prompt, ...messages],
+    stream: true,
+  });
+  
+  return new StreamingTextResponse(OpenAIStream(response));
+}
+```
+
+```typescript Context Retrieval
+// src/lib/context.ts
+export async function getContext(query: string, fileKey: string) {
+  // 1. Convert query to embedding
+  const queryEmbeddings = await getEmbeddings(query);
+  
+  // 2. Search for similar vectors
+  const matches = await getMatchesFromEmbeddings(queryEmbeddings, fileKey);
+  
+  // 3. Filter by similarity threshold
+  const qualifyingDocs = matches.filter(
+    (match) => match.score && match.score > 0.7
+  );
+  
+  // 4. Concatenate and truncate context
+  let docs = qualifyingDocs.map((match) => (match.metadata as Metadata).text);
+  return docs.join("\n").substring(0, 3000);
+}
+```
+
+</CodeGroup>
+
+### Database Schema
+
+The application uses three primary tables:
+
+<CodeGroup>
+
+```typescript Chats Table
+// src/lib/db/schema.ts
+export const chats = pgTable('chats', {
+  id: serial('id').primaryKey(),
+  pdfName: text('pdf_name').notNull(),
+  pdfUrl: text('pdf_url').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  userId: varchar('user_id', { length: 255 }).notNull(),
+  fileKey: text('file_key').notNull(),
+})
+```
+
+```typescript Messages Table
+export const messages = pgTable('messages', {
+  id: serial('id').primaryKey(),
+  chatId: integer('chat_id').references(() => chats.id).notNull(),
+  content: text('content').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  role: userSystemEnum('role').notNull(),
+})
+```
+
+```typescript Subscriptions Table
+export const userSubscriptions = pgTable("user_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id", { length: 256 }).notNull().unique(),
+  stripeCustomerId: varchar("stripe_customer_id", { length: 256 }).notNull().unique(),
+  stripeSubscriptionId: varchar("stripe_subscription_id", { length: 256 }).unique(),
+  stripePriceId: varchar("stripe_price_id", { length: 256 }),
+  stripeCurrentPeriodEnd: timestamp("stripe_current_period_ended_at"),
+});
+```
+
+</CodeGroup>
+
+## Performance Optimizations
+
+<Note>
+The system is optimized for both cold starts and sustained performance.
+</Note>
+
+### Edge Runtime
+
+All API routes use `export const runtime = "edge"` to run on Vercel's Edge Network, providing:
+
+- Sub-100ms cold starts
+- Global distribution
+- Automatic scaling
+- Lower costs compared to serverless functions
+
+### Streaming Responses
+
+The chat API streams responses using the Vercel AI SDK:
+
+```typescript
+const stream = OpenAIStream(response, {
+  onStart: async () => {
+    // Save user message to DB
+    await db.insert(dbMessages).values({...});
+  },
+  onCompletion: async (completion) => {
+    // Save AI response to DB
+    await db.insert(dbMessages).values({...});
+  },
+});
+return new StreamingTextResponse(stream);
+```
+
+This provides instant feedback to users as the AI generates responses.
+
+### Pinecone Client Singleton
+
+The Pinecone client is initialized once and reused across requests:
+
+```typescript
+// src/lib/pinecone.ts:12
+let pinecone: Pinecone | null = null;
+
+export const getPineconeClient = async () => {
+  if (!pinecone) {
+    pinecone = new Pinecone({
+      apiKey: process.env.PINECONE_API_KEY!,
+      environment: process.env.PINECONE_ENVIRONMENT!,
+    });
+  }
+  return pinecone;
+};
+```
+
+<Warning>
+Ensure all environment variables are properly configured in production. Missing API keys will cause runtime errors.
+</Warning>
+
+## Security Considerations
+
+### Authentication
+
+Clerk middleware protects all authenticated routes:
+
+```typescript
+// src/app/api/create-chat/route.ts:9
+const { userId } = getAuth(req);
+if (!userId) {
+  return NextResponse.json(
+    { error: "Authentication error" },
+    { status: 401 }
+  );
+}
+```
+
+### Data Isolation
+
+Pinecone namespaces ensure users can only access their own documents:
+
+```typescript
+// src/lib/pinecone.ts:49
+const namespace = pineconeIndex.namespace(convertToAscii(fileKey));
+```
+
+Each PDF is stored in a unique namespace, preventing cross-document data leakage.
+
+### Environment Variables
+
+Sensitive credentials are stored as environment variables:
+
+- `PINECONE_API_KEY` - Pinecone authentication
+- `OPEN_AI_KEY` - OpenAI API access
+- `NEXT_PUBLIC_S3_ACCESS_KEY_ID` - AWS S3 credentials
+- `NEXT_PUBLIC_S3_SECRET_ACCESS_KEY` - AWS S3 secret
+- Database connection strings
+
+## Scalability
+
+The architecture supports horizontal scaling:
+
+- **Stateless API routes** - No server-side session state
+- **Serverless vector database** - Pinecone auto-scales
+- **Edge distribution** - Globally distributed compute
+- **Object storage** - S3 handles unlimited PDFs
+
+<Info>
+The system can handle thousands of concurrent users and millions of documents with no architectural changes required.
+</Info>

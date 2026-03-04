@@ -1,0 +1,252 @@
+---
+title: "AWS S3 Storage"
+description: "Upload, store, and retrieve PDF files using Amazon S3 object storage"
+---
+
+## Overview
+
+PDF AI uses AWS S3 for reliable and scalable PDF file storage. PDFs are uploaded from the client-side, stored in S3, and later retrieved for processing and viewing.
+
+## Configuration
+
+### Environment Variables
+
+Add your AWS credentials and bucket configuration to `.env`:
+
+```bash
+NEXT_PUBLIC_S3_ACCESS_KEY_ID=your-access-key-id
+NEXT_PUBLIC_S3_SECRET_ACCESS_KEY=your-secret-access-key
+NEXT_PUBLIC_S3_BUCKET_NAME=your-bucket-name
+```
+
+<Warning>
+  The `NEXT_PUBLIC_` prefix exposes these variables to the client-side. For production, use temporary credentials or a pre-signed URL approach instead.
+</Warning>
+
+### S3 Bucket Setup
+
+1. Create an S3 bucket in the `ap-south-1` region (or update the region in code)
+2. Configure CORS to allow uploads from your domain:
+
+```json
+[
+  {
+    "AllowedHeaders": ["*"],
+    "AllowedMethods": ["PUT", "POST", "GET"],
+    "AllowedOrigins": ["http://localhost:3000", "https://yourdomain.com"],
+    "ExposeHeaders": ["ETag"]
+  }
+]
+```
+
+3. Set up an IAM user with `s3:PutObject`, `s3:GetObject`, and `s3:ListBucket` permissions
+
+## Client-Side Upload
+
+The `uploadToS3()` function handles file uploads from the browser (`src/lib/s3.ts:4-48`):
+
+```typescript
+import AWS from "aws-sdk";
+import toast from "react-hot-toast";
+
+export async function uploadToS3(file: File) {
+  try {
+    AWS.config.update({
+      accessKeyId: process.env.NEXT_PUBLIC_S3_ACCESS_KEY_ID,
+      secretAccessKey: process.env.NEXT_PUBLIC_S3_SECRET_ACCESS_KEY,
+    });
+    
+    const s3 = new AWS.S3({
+      params: {
+        Bucket: process.env.NEXT_PUBLIC_S3_BUCKET_NAME,
+      },
+      region: "ap-south-1",
+    });
+    
+    const file_key =
+      "uploads/" + Date.now().toString() + file.name.replace(" ", "-");
+
+    const params = {
+      Bucket: process.env.NEXT_PUBLIC_S3_BUCKET_NAME!,
+      Key: file_key,
+      Body: file,
+    };
+
+    const upload = s3
+      .putObject(params)
+      .on("httpUploadProgress", (evt) => {
+        console.log(
+          "upload progress",
+          parseInt(((evt.loaded * 100) / evt.total).toString()) + "%"
+        );
+      })
+      .promise();
+
+    await upload.then((data) => {
+      toast.success("File uploaded successfully");
+    });
+
+    return Promise.resolve({
+      file_key,
+      file_name: file.name,
+    });
+  } catch (error) {
+    console.log("upload error", error);
+  }
+}
+```
+
+## Key Features
+
+### Progress Tracking
+
+The upload function provides real-time progress updates:
+
+```typescript
+.on("httpUploadProgress", (evt) => {
+  console.log(
+    "upload progress",
+    parseInt(((evt.loaded * 100) / evt.total).toString()) + "%"
+  );
+})
+```
+
+### Unique File Keys
+
+Files are stored with timestamp-based keys to prevent collisions:
+
+```typescript
+const file_key = "uploads/" + Date.now().toString() + file.name.replace(" ", "-");
+```
+
+### User Feedback
+
+Success notifications are shown using `react-hot-toast`:
+
+```typescript
+toast.success("File uploaded successfully");
+```
+
+## Server-Side Download
+
+The server-side function downloads PDFs for processing (`src/lib/s3-server.ts:3-28`):
+
+```typescript
+import AWS from "aws-sdk";
+import fs from "fs";
+
+export async function downloadFromS3(file_key: string) {
+  try {
+    AWS.config.update({
+      accessKeyId: process.env.NEXT_PUBLIC_S3_ACCESS_KEY_ID,
+      secretAccessKey: process.env.NEXT_PUBLIC_S3_SECRET_ACCESS_KEY,
+    });
+    
+    const s3 = new AWS.S3({
+      params: {
+        Bucket: process.env.NEXT_PUBLIC_S3_BUCKET_NAME,
+      },
+      region: "ap-south-1",
+    });
+    
+    const params = {
+      Bucket: process.env.NEXT_PUBLIC_S3_BUCKET_NAME!,
+      Key: file_key,
+    };
+    
+    const obj = await s3.getObject(params).promise();
+    const file_name = `D:/pdf-${Date.now()}.pdf`;
+
+    fs.writeFileSync(file_name, obj.Body as Buffer);
+    return file_name;
+  } catch (error) {
+    console.log(error);
+    return null;
+  }
+}
+```
+
+<Note>
+  The download function saves files to `D:/pdf-{timestamp}.pdf`. Update the path for your server environment (e.g., `/tmp/` for Linux).
+</Note>
+
+## URL Generation
+
+Generate public URLs for S3 objects (`src/lib/s3.ts:50-52`):
+
+```typescript
+export function getS3Url(file_key: string) {
+  return `https://${process.env.NEXT_PUBLIC_S3_BUCKET_NAME}.s3.ap-south-1.amazonaws.com/${file_key}`;
+}
+```
+
+## API Reference
+
+### uploadToS3
+
+<ParamField path="file" type="File" required>
+  The File object to upload to S3
+</ParamField>
+
+**Returns**: Promise resolving to `{ file_key: string, file_name: string }`
+
+### downloadFromS3
+
+<ParamField path="file_key" type="string" required>
+  The S3 key of the file to download
+</ParamField>
+
+**Returns**: Promise resolving to local file path or `null` on error
+
+### getS3Url
+
+<ParamField path="file_key" type="string" required>
+  The S3 key of the file
+</ParamField>
+
+**Returns**: Public HTTPS URL to the S3 object
+
+## Dependencies
+
+```json
+{
+  "aws-sdk": "^2.x.x",
+  "react-hot-toast": "^2.x.x"
+}
+```
+
+## Best Practices
+
+<Warning>
+  Never expose AWS credentials in client-side code in production. Use alternatives like:
+  - AWS Amplify for managed authentication
+  - Pre-signed URLs generated server-side
+  - AWS Cognito Identity Pools for temporary credentials
+</Warning>
+
+### Security Recommendations
+
+1. **Use Pre-Signed URLs**: Generate time-limited upload URLs server-side
+2. **Implement Bucket Policies**: Restrict access to authorized users only
+3. **Enable Encryption**: Use S3 server-side encryption (SSE-S3 or SSE-KMS)
+4. **Set up Lifecycle Policies**: Automatically delete temporary files
+
+### Performance Optimization
+
+- **Multipart Upload**: For files larger than 100MB, use multipart uploads
+- **CloudFront CDN**: Serve PDFs through CloudFront for faster delivery
+- **Regional Buckets**: Place buckets close to your users
+
+## Troubleshooting
+
+### Upload Failures
+
+- **CORS Errors**: Verify CORS configuration in S3 bucket settings
+- **403 Forbidden**: Check IAM permissions for `s3:PutObject`
+- **Network Errors**: Implement retry logic with exponential backoff
+
+### Download Issues
+
+- **File Not Found**: Ensure the `file_key` exists in the bucket
+- **Permission Denied**: Verify IAM user has `s3:GetObject` permission
+- **Path Errors**: Update the file save path to match your OS (e.g., `/tmp/` for Linux)

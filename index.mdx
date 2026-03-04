@@ -1,97 +1,141 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Welcome to PDF AI"
+mode: "custom"
 ---
 
-## Setting up
+<div className="relative overflow-hidden bg-gradient-to-br from-gray-900 via-purple-900 to-violet-900 dark:from-[#0f1117] dark:via-purple-950 dark:to-violet-950 py-20">
+  <div className="absolute inset-0 bg-black/40"></div>
+  <div className="relative max-w-7xl mx-auto px-6 lg:px-8">
+    <div className="max-w-3xl">
+      <h1 className="text-5xl lg:text-6xl font-bold text-white mb-6">
+        Chat with Any PDF Document
+      </h1>
+      <p className="text-xl text-gray-200 dark:text-gray-300 mb-8 max-w-2xl">
+        AI-powered PDF assistant that enables intelligent conversations with your documents using advanced RAG architecture, vector embeddings, and OpenAI GPT.
+      </p>
+      <div className="flex flex-wrap gap-4">
+        <a 
+          href="/quickstart" 
+          className="inline-flex items-center px-6 py-3 rounded-lg bg-white text-gray-900 font-semibold hover:bg-gray-100 transition-colors"
+        >
+          Get Started
+        </a>
+        <a 
+          href="/how-it-works" 
+          className="inline-flex items-center px-6 py-3 rounded-lg border border-white/30 bg-white/10 text-white font-semibold hover:bg-white/20 transition-colors"
+        >
+          How It Works
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
 
-Get your documentation site up and running in minutes.
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="mb-16">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Quick Start</h2>
+    <p className="text-gray-600 dark:text-gray-400 mb-8">Get up and running with PDF AI in minutes</p>
+    
+    <Steps>
+      <Step title="Create an Account">
+        Sign up using Clerk authentication to access the PDF AI platform. Authentication is powered by industry-standard security protocols.
+      </Step>
+      <Step title="Upload Your PDF">
+        Upload any PDF document to AWS S3 storage. Your files are securely stored and processed using our edge-optimized infrastructure.
+        
+        ```typescript
+        // Upload handled automatically through the UI
+        // Files are stored with unique keys: uploads/{timestamp}-{filename}
+        ```
+      </Step>
+      <Step title="Start Chatting">
+        Ask questions about your PDF and receive AI-powered responses. Our RAG pipeline retrieves relevant context from your document and generates intelligent answers.
+        
+        <Accordion title="Example Conversation">
+        **You**: What are the main topics covered in this document?
+        
+        **AI**: Based on the content, this document covers three primary topics: machine learning fundamentals, neural network architectures, and practical implementation strategies...
+        </Accordion>
+      </Step>
+    </Steps>
+  </div>
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+  <div className="mb-16">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Core Features</h2>
+    <p className="text-gray-600 dark:text-gray-400 mb-8">Everything you need to unlock insights from your PDFs</p>
+    
+    <CardGroup cols={2}>
+      <Card title="AI-Powered Chat" icon="messages" href="/features/ai-chat">
+        Engage in natural conversations with your PDFs using OpenAI GPT-4 and streaming responses
+      </Card>
+      <Card title="Smart Search" icon="magnifying-glass" href="/technical/vector-database">
+        Semantic search powered by vector embeddings finds relevant content instantly
+      </Card>
+      <Card title="Secure Upload" icon="cloud-arrow-up" href="/features/pdf-upload">
+        Upload PDFs securely to AWS S3 with automatic processing and indexing
+      </Card>
+      <Card title="Subscription Plans" icon="credit-card" href="/features/subscription">
+        Flexible pricing with Stripe integration for seamless payment management
+      </Card>
+    </CardGroup>
+  </div>
 
-## Make it yours
+  <div className="mb-16">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Technical Documentation</h2>
+    <p className="text-gray-600 dark:text-gray-400 mb-8">Deep dive into the architecture and integrations</p>
+    
+    <CardGroup cols={3}>
+      <Card title="RAG Pipeline" icon="diagram-project" href="/technical/rag-pipeline">
+        Learn how Retrieval Augmented Generation works
+      </Card>
+      <Card title="Vector Database" icon="database" href="/technical/vector-database">
+        Explore Pinecone integration for embeddings
+      </Card>
+      <Card title="API Reference" icon="code" href="/api/overview">
+        Complete API documentation for developers
+      </Card>
+      <Card title="OpenAI Integration" icon="brain" href="/integrations/openai">
+        GPT-4 and embedding models configuration
+      </Card>
+      <Card title="AWS S3 Setup" icon="aws" href="/integrations/aws-s3">
+        File storage and retrieval architecture
+      </Card>
+      <Card title="Authentication" icon="lock" href="/integrations/clerk-auth">
+        Clerk-powered user management
+      </Card>
+    </CardGroup>
+  </div>
 
-Design a docs site that looks great and empowers your users.
+  <div className="mb-16">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Resources</h2>
+    <p className="text-gray-600 dark:text-gray-400 mb-8">Everything you need to get the most out of PDF AI</p>
+    
+    <CardGroup cols={2}>
+      <Card title="User Guide" icon="book-open" href="/guide/uploading-pdfs">
+        Step-by-step tutorials for common tasks
+      </Card>
+      <Card title="FAQ" icon="circle-question" href="/resources/faq">
+        Answers to frequently asked questions
+      </Card>
+      <Card title="Development Setup" icon="hammer" href="/development/setup">
+        Set up a local development environment
+      </Card>
+      <Card title="Troubleshooting" icon="wrench" href="/resources/troubleshooting">
+        Common issues and their solutions
+      </Card>
+    </CardGroup>
+  </div>
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
-  </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
-
-## Create beautiful pages
-
-Everything you need to create world-class documentation.
-
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
-
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+  <div className="rounded-2xl border border-gray-200 dark:border-[#27272a] bg-gray-50 dark:bg-[#1a1d27] p-8 text-center">
+    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Ready to Get Started?</h2>
+    <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-2xl mx-auto">
+      Start chatting with your PDFs in minutes. No credit card required for the free tier.
+    </p>
+    <a 
+      href="/quickstart" 
+      className="inline-flex items-center px-6 py-3 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-semibold hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors"
+    >
+      Start Chatting Now
+    </a>
+  </div>
+</div>

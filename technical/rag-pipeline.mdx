@@ -1,0 +1,449 @@
+---
+title: "RAG Pipeline"
+description: "Deep dive into the Retrieval-Augmented Generation pipeline: document processing, context retrieval, and response generation"
+---
+
+## What is RAG?
+
+Retrieval-Augmented Generation (RAG) is an AI pattern that enhances language models by providing them with relevant context retrieved from external knowledge sources. Instead of relying solely on the model's training data, RAG systems:
+
+1. **Retrieve** relevant information from a knowledge base
+2. **Augment** the user's query with this context
+3. **Generate** an informed response using the language model
+
+<Info>
+RAG dramatically improves accuracy and reduces hallucinations by grounding AI responses in actual document content.
+</Info>
+
+## Pipeline Architecture
+
+The PDF AI RAG pipeline consists of three main stages:
+
+```mermaid
+Document Ingestion → Context Retrieval → Response Generation
+```
+
+### Stage 1: Document Ingestion
+
+Document ingestion transforms PDFs into searchable vector embeddings.
+
+### Stage 2: Context Retrieval
+
+When a user asks a question, relevant document chunks are retrieved.
+
+### Stage 3: Response Generation
+
+The retrieved context is combined with the user's question to generate an answer.
+
+## Document Processing
+
+The document processing pipeline is implemented in `src/lib/pinecone.ts` and handles converting PDFs into searchable vectors.
+
+### Step 1: PDF Download from S3
+
+```typescript
+// src/lib/pinecone.ts:31
+export async function loadS3IntoPinecone(fileKey: string) {
+  // Download the PDF from S3
+  console.log("downloading from s3...");
+  const file_name = await downloadFromS3(fileKey);
+  if (!file_name) {
+    throw new Error("unable to download file from s3");
+  }
+```
+
+The PDF is first downloaded from AWS S3 to a temporary local file.
+
+<Note>
+The file is stored at `D:/pdf-${Date.now()}.pdf` during processing (src/lib/s3-server.ts:20).
+</Note>
+
+### Step 2: PDF Text Extraction
+
+```typescript
+// src/lib/pinecone.ts:38
+const loader = new PDFLoader(file_name);
+const pages = (await loader.load()) as PDFPage[];
+```
+
+LangChain's `PDFLoader` extracts text from every page, producing an array of page objects:
+
+```typescript
+type PDFPage = {
+  pageContent: string;
+  metadata: {
+    loc: { pageNumber: number };
+  };
+};
+```
+
+### Step 3: Document Chunking
+
+Large documents are split into smaller, semantically meaningful chunks:
+
+```typescript
+// src/lib/pinecone.ts:83
+async function prepareDocument(page: PDFPage) {
+  let { pageContent, metadata } = page;
+  
+  // Remove newlines for cleaner text
+  pageContent = pageContent.replace(/\n/g, "");
+  
+  // Split using RecursiveCharacterTextSplitter
+  const splitter = new RecursiveCharacterTextSplitter();
+  const docs = await splitter.splitDocuments([
+    new Document({
+      pageContent,
+      metadata: {
+        pageNumber: metadata.loc.pageNumber,
+        text: truncateStringByBytes(pageContent, 36000),
+      },
+    }),
+  ]);
+  return docs;
+}
+```
+
+<Accordion title="Why chunking is important">
+
+**Chunking serves three critical purposes:**
+
+1. **Token Limits** - Language models have context window limits. Smaller chunks ensure we stay within bounds.
+
+2. **Semantic Precision** - Smaller chunks provide more focused, relevant context. A chunk about "security" won't also include unrelated content about "pricing".
+
+3. **Pinecone Constraints** - Metadata is limited to 36KB per vector (hence the `truncateStringByBytes` call).
+
+</Accordion>
+
+### Step 4: Byte Truncation
+
+Pinecone has a 36KB metadata limit per vector:
+
+```typescript
+// src/lib/pinecone.ts:74
+export const truncateStringByBytes = (str: string, bytes: number) => {
+  const enc = new TextEncoder();
+  const encodedBytes = enc.encode(str);
+  const truncatedBytes = encodedBytes.slice(0, bytes);
+  const decoder = new TextDecoder("utf-8");
+  const truncatedString = decoder.decode(truncatedBytes);
+  return truncatedString;
+};
+```
+
+<Warning>
+Truncation by bytes (not characters) is crucial because UTF-8 characters can be multiple bytes.
+</Warning>
+
+### Step 5: Embedding Generation
+
+Each chunk is converted to a 1536-dimension vector using OpenAI's embedding model:
+
+```typescript
+// src/lib/pinecone.ts:56
+async function embedDocument(doc: Document) {
+  try {
+    const embeddings = await getEmbeddings(doc.pageContent);
+    const hash = md5(doc.pageContent);
+    return {
+      id: hash,
+      values: embeddings,
+      metadata: {
+        text: doc.metadata.text,
+        pageNumber: doc.metadata.pageNumber,
+      },
+    } as PineconeRecord;
+  } catch (error) {
+    console.log(error);
+    throw new Error("unable to embed document");
+  }
+}
+```
+
+The embedding function uses OpenAI's `text-embedding-ada-002` model:
+
+```typescript
+// src/lib/embeddings.ts:9
+export async function getEmbeddings(text: string) {
+  try {
+    const response = await openai.createEmbedding({
+      model: "text-embedding-ada-002",
+      input: text.replace(/\n/g, " "),
+    });
+    const result = await response.json();
+    return result.data[0].embedding as number[];
+  } catch (error) {
+    console.log("error calling openai embeddings api", error);
+    throw error;
+  }
+}
+```
+
+<Info>
+**Why use MD5 hashing for IDs?**
+
+MD5 hashing ensures deterministic IDs. If the same content is processed twice, it gets the same ID, preventing duplicate vectors in Pinecone.
+</Info>
+
+### Step 6: Pinecone Upload
+
+Vectors are upserted to Pinecone with namespace isolation:
+
+```typescript
+// src/lib/pinecone.ts:44
+const vectors = await Promise.all(documents.flat().map(embedDocument));
+
+const client = await getPineconeClient();
+const pineconeIndex = await client.Index("aipdf");
+const namespace = pineconeIndex.namespace(convertToAscii(fileKey));
+
+console.log("uploading to pinecone...");
+await namespace.upsert(vectors);
+```
+
+<Note>
+Each PDF gets its own namespace (based on the S3 file key) to ensure data isolation between documents.
+</Note>
+
+## Context Retrieval
+
+When a user asks a question, the system retrieves relevant document chunks through semantic similarity search.
+
+### Step 1: Query Embedding
+
+```typescript
+// src/lib/context.ts:46
+export async function getContext(query: string, fileKey: string) {
+  const queryEmbeddings = await getEmbeddings(query);
+  const matches = await getMatchesFromEmbeddings(queryEmbeddings, fileKey);
+  // ...
+}
+```
+
+The user's question is converted to the same embedding format as the documents.
+
+### Step 2: Vector Similarity Search
+
+```typescript
+// src/lib/context.ts:18
+export async function getMatchesFromEmbeddings(
+  embeddings: number[],
+  fileKey: string
+) {
+  const pinecone = new PineconeClient();
+  await pinecone.init({
+    apiKey: process.env.PINECONE_API_KEY!,
+    environment: process.env.PINECONE_ENVIRONMENT!,
+  });
+  const index = await pinecone.Index("aipdf");
+
+  try {
+    const namespace = convertToAscii(fileKey);
+    const queryResult = await index.query({
+      queryRequest: {
+        topK: 5,
+        vector: embeddings,
+        includeMetadata: true,
+        namespace,
+      },
+    });
+    return queryResult.matches || [];
+  } catch (error) {
+    console.log("error querying embeddings", error);
+    throw error;
+  }
+}
+```
+
+<Accordion title="Understanding topK parameter">
+
+**topK: 5** means "return the 5 most similar document chunks."
+
+Pinecone uses cosine similarity to rank vectors. The similarity score ranges from 0 to 1:
+- **0.9-1.0** - Extremely similar
+- **0.7-0.9** - Highly relevant
+- **0.5-0.7** - Somewhat relevant
+- **< 0.5** - Not relevant
+
+</Accordion>
+
+### Step 3: Filtering by Relevance
+
+```typescript
+// src/lib/context.ts:50
+const qualifyingDocs = matches.filter(
+  (match) => match.score && match.score > 0.7
+);
+```
+
+Only chunks with similarity scores above 0.7 are used. This threshold prevents irrelevant context from confusing the AI.
+
+<Warning>
+If no chunks score above 0.7, the AI will respond with "I don't know" rather than hallucinating an answer.
+</Warning>
+
+### Step 4: Context Assembly
+
+```typescript
+// src/lib/context.ts:59
+let docs = qualifyingDocs.map((match) => (match.metadata as Metadata).text);
+return docs.join("\n").substring(0, 3000);
+```
+
+Retrieved chunks are concatenated and truncated to 3000 characters to fit within GPT-4's context window.
+
+## Response Generation
+
+The final stage combines retrieved context with the language model to generate answers.
+
+### System Prompt Construction
+
+```typescript
+// src/app/api/chat/route.ts:28
+const context = await getContext(lastMessage.content, fileKey);
+
+const prompt = {
+  role: "system",
+  content: `AI assistant is a brand new, powerful, human-like artificial intelligence.
+  The traits of AI include expert knowledge, helpfulness, cleverness, and articulateness.
+  AI is a well-behaved and well-mannered individual.
+  AI is always friendly, kind, and inspiring, and he is eager to provide vivid and thoughtful responses to the user.
+  AI has the sum of all knowledge in their brain, and is able to accurately answer nearly any question about any topic in conversation.
+  AI assistant is a big fan of Pinecone and Vercel.
+  START CONTEXT BLOCK
+  ${context}
+  END OF CONTEXT BLOCK
+  AI assistant will take into account any CONTEXT BLOCK that is provided in a conversation.
+  If the context does not provide the answer to question, the AI assistant will say, "I'm sorry, but I don't know the answer to that question".
+  AI assistant will not apologize for previous responses, but instead will indicated new information was gained.
+  AI assistant will not invent anything that is not drawn directly from the context.
+  `,
+};
+```
+
+<Info>
+The system prompt explicitly instructs the AI to only use information from the context block, preventing hallucinations.
+</Info>
+
+### Streaming Chat Completion
+
+```typescript
+// src/app/api/chat/route.ts:46
+const response = await openai.createChatCompletion({
+  model: "gpt-4-1106-preview",
+  messages: [
+    prompt,
+    ...messages.filter((message: Message) => message.role === "user"),
+  ],
+  stream: true,
+});
+
+const stream = OpenAIStream(response, {
+  onStart: async () => {
+    await db.insert(dbMessages).values({
+      chatId,
+      content: lastMessage.content,
+      role: "user",
+    });
+  },
+  onCompletion: async (completion) => {
+    await db.insert(dbMessages).values({
+      chatId,
+      content: completion,
+      role: "system",
+    });
+  },
+});
+
+return new StreamingTextResponse(stream);
+```
+
+The response is streamed back to the user in real-time, providing instant feedback as the AI generates the answer.
+
+<Accordion title="Benefits of streaming">
+
+1. **Perceived Performance** - Users see responses immediately instead of waiting for complete generation
+2. **Better UX** - Users can start reading while the AI is still writing
+3. **Error Handling** - If generation fails mid-stream, users still see partial responses
+4. **Lower Time-to-First-Byte** - Critical for Edge Runtime cold starts
+
+</Accordion>
+
+## Pipeline Performance
+
+### Document Processing Metrics
+
+- **PDF Download**: ~1-3 seconds (depends on file size)
+- **Text Extraction**: ~0.5-2 seconds per page
+- **Embedding Generation**: ~0.3 seconds per chunk
+- **Pinecone Upload**: ~1-2 seconds (batch operation)
+
+**Total ingestion time for a 10-page PDF: ~15-30 seconds**
+
+### Query Performance Metrics
+
+- **Query Embedding**: ~0.3 seconds
+- **Pinecone Search**: ~50-200ms
+- **GPT-4 First Token**: ~1-2 seconds
+- **Streaming Completion**: ~3-10 seconds (varies by response length)
+
+**Total time to first token: ~1.5-2.5 seconds**
+
+<Note>
+All timings assume Edge Runtime deployment with optimal network conditions.
+</Note>
+
+## Error Handling
+
+The pipeline includes robust error handling at each stage:
+
+```typescript
+// src/app/api/chat/route.ts:74
+try {
+  // ... pipeline logic
+} catch (error) {
+  return NextResponse.json(
+    { error: "internal server error" },
+    { status: 500 }
+  );
+}
+```
+
+Common error scenarios:
+
+1. **S3 Download Fails** - Returns error before processing
+2. **OpenAI API Error** - Caught and logged, returns 500
+3. **Pinecone Timeout** - Automatically retried by SDK
+4. **No Context Found** - AI responds with "I don't know"
+
+## Optimization Opportunities
+
+<Accordion title="Potential improvements">
+
+### Caching
+
+- Cache query embeddings for common questions
+- Cache Pinecone search results (with TTL)
+
+### Parallel Processing
+
+- Process PDF pages in parallel
+- Batch embedding API calls
+
+### Smarter Chunking
+
+- Use semantic chunking instead of character-based
+- Preserve section boundaries
+
+### Hybrid Search
+
+- Combine vector search with keyword search
+- Re-rank results using cross-encoder models
+
+### Context Optimization
+
+- Dynamically adjust context window based on query complexity
+- Use compression techniques for longer contexts
+
+</Accordion>

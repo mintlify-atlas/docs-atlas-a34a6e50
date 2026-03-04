@@ -1,0 +1,335 @@
+---
+title: "Stripe Payments"
+description: "Monetize your PDF AI application with Stripe subscription payments"
+---
+
+## Overview
+
+PDF AI integrates with Stripe to handle subscription payments, allowing users to upgrade to a Pro plan for enhanced features. The integration manages customer creation, subscription lifecycle, and payment verification.
+
+## Configuration
+
+### Environment Variables
+
+Add your Stripe credentials to `.env`:
+
+```bash
+STRIPE_API_KEY=sk_test_...
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+```
+
+<Note>
+  Get your API keys from the [Stripe Dashboard](https://dashboard.stripe.com/apikeys)
+</Note>
+
+### Webhook Configuration
+
+1. Set up a webhook endpoint at `/api/webhook/stripe` in your Stripe Dashboard
+2. Subscribe to these events:
+   - `checkout.session.completed`
+   - `invoice.payment_succeeded`
+   - `customer.subscription.deleted`
+
+<Warning>
+  Add `/api/webhook` to Clerk's public routes to allow Stripe to send webhook events without authentication.
+</Warning>
+
+## Implementation
+
+### Stripe Client
+
+The Stripe client is initialized in `src/lib/stripe.ts:1-7`:
+
+```typescript
+import Stripe from "stripe";
+
+export const stripe = new Stripe(process.env.STRIPE_API_KEY as string, {
+  apiVersion: "2023-10-16",
+  typescript: true,
+});
+```
+
+<Info>
+  The API version is pinned to `2023-10-16` to ensure consistent behavior. Update this when you're ready to adopt new Stripe features.
+</Info>
+
+## Subscription Management
+
+### Checking Subscription Status
+
+The `checkSubscription()` function verifies if a user has an active Pro subscription (`src/lib/subscription.ts:6-20`):
+
+```typescript
+import { auth } from "@clerk/nextjs";
+import { userSubscriptions } from "./db/schema";
+import { eq } from "drizzle-orm";
+import { db } from "./db";
+
+export const checkSubscription = async () => {
+  const { userId } = await auth();
+  if (!userId) return false;
+
+  const _userSubscriptions = await db
+    .select()
+    .from(userSubscriptions)
+    .where(eq(userSubscriptions.userId, userId));
+
+  if (!_userSubscriptions[0]) return false;
+
+  const userSubscription = _userSubscriptions[0];
+
+  const isValid =
+    userSubscription.stripePriceId &&
+    userSubscription.stripeCurrentPeriodEnd?.getTime()! + 1000 * 60 * 60 * 24 > Date.now();
+
+  return !!isValid;
+};
+```
+
+### How It Works
+
+1. **Get User ID**: Retrieves the authenticated user from Clerk
+2. **Query Database**: Looks up subscription record in the database
+3. **Validate Subscription**: Checks if:
+   - A price ID exists (subscription was created)
+   - Current period hasn't expired (plus 24-hour grace period)
+4. **Return Status**: Returns `true` for active Pro users, `false` otherwise
+
+<Note>
+  The 24-hour grace period (`+ 1000 * 60 * 60 * 24`) allows users to continue using Pro features for a day after their subscription ends, accommodating payment processing delays.
+</Note>
+
+## Database Schema
+
+Subscription data is stored in the `user_subscriptions` table (`src/lib/db/schema.ts:25-36`):
+
+```typescript
+export const userSubscriptions = pgTable("user_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id", { length: 256 }).notNull().unique(),
+  stripeCustomerId: varchar("stripe_customer_id", { length: 256 })
+    .notNull()
+    .unique(),
+  stripeSubscriptionId: varchar("stripe_subscription_id", {
+    length: 256,
+  }).unique(),
+  stripePriceId: varchar("stripe_price_id", { length: 256 }),
+  stripeCurrentPeriodEnd: timestamp("stripe_current_period_ended_at"),
+});
+```
+
+### Schema Fields
+
+<ParamField path="userId" type="varchar(256)" required>
+  The Clerk user ID, linking the subscription to the authenticated user
+</ParamField>
+
+<ParamField path="stripeCustomerId" type="varchar(256)" required>
+  The Stripe customer ID for managing billing
+</ParamField>
+
+<ParamField path="stripeSubscriptionId" type="varchar(256)">
+  The Stripe subscription ID for the active subscription
+</ParamField>
+
+<ParamField path="stripePriceId" type="varchar(256)">
+  The Stripe price ID indicating the selected plan
+</ParamField>
+
+<ParamField path="stripeCurrentPeriodEnd" type="timestamp">
+  When the current billing period ends
+</ParamField>
+
+## Usage in Components
+
+Display subscription status and upgrade options (`src/app/page.tsx:16-43`):
+
+```typescript
+import { checkSubscription } from "@/lib/subscription";
+import SubscriptionButton from "@/components/SubscriptionButton";
+
+export default async function Home() {
+  const { userId } = await auth();
+  const isPro = await checkSubscription();
+  
+  return (
+    <div>
+      {isAuth && (
+        <div className="ml-2">
+          <SubscriptionButton isPro={isPro} />
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+## Subscription Flow
+
+1. **User Clicks Upgrade**: `SubscriptionButton` initiates checkout
+2. **Create Checkout Session**: API route creates a Stripe Checkout session
+3. **Redirect to Stripe**: User is sent to Stripe-hosted payment page
+4. **Payment Completion**: Stripe processes payment and redirects back
+5. **Webhook Received**: Your app receives `checkout.session.completed` event
+6. **Update Database**: Store subscription details in `user_subscriptions` table
+7. **Grant Access**: `checkSubscription()` now returns `true`
+
+## Creating a Checkout Session
+
+Typical implementation for creating a checkout session:
+
+```typescript
+import { stripe } from "@/lib/stripe";
+import { auth } from "@clerk/nextjs";
+
+export async function POST(req: Request) {
+  const { userId } = await auth();
+  
+  if (!userId) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    customer_email: user.email,
+    payment_method_types: ["card"],
+    line_items: [
+      {
+        price: process.env.STRIPE_PRICE_ID,
+        quantity: 1,
+      },
+    ],
+    mode: "subscription",
+    success_url: `${process.env.NEXT_PUBLIC_APP_URL}/success`,
+    cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/cancel`,
+    metadata: {
+      userId,
+    },
+  });
+
+  return Response.json({ url: session.url });
+}
+```
+
+## Webhook Handler
+
+Process Stripe events in `/api/webhook/stripe/route.ts`:
+
+```typescript
+import { stripe } from "@/lib/stripe";
+import { db } from "@/lib/db";
+import { userSubscriptions } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+
+export async function POST(req: Request) {
+  const body = await req.text();
+  const signature = req.headers.get("stripe-signature")!;
+
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(
+      body,
+      signature,
+      process.env.STRIPE_WEBHOOK_SECRET!
+    );
+  } catch (err) {
+    return new Response(`Webhook Error: ${err.message}`, { status: 400 });
+  }
+
+  switch (event.type) {
+    case "checkout.session.completed":
+      const session = event.data.object;
+      await db.insert(userSubscriptions).values({
+        userId: session.metadata.userId,
+        stripeCustomerId: session.customer as string,
+        stripeSubscriptionId: session.subscription as string,
+        stripePriceId: session.line_items?.data[0].price.id,
+        stripeCurrentPeriodEnd: new Date(
+          session.subscription.current_period_end * 1000
+        ),
+      });
+      break;
+
+    case "invoice.payment_succeeded":
+      // Update subscription period
+      break;
+
+    case "customer.subscription.deleted":
+      // Handle cancellation
+      break;
+  }
+
+  return new Response("Webhook received", { status: 200 });
+}
+```
+
+<Warning>
+  Always verify webhook signatures using `stripe.webhooks.constructEvent()` to prevent unauthorized requests.
+</Warning>
+
+## Dependencies
+
+```json
+{
+  "stripe": "^13.x.x",
+  "@stripe/stripe-js": "^2.x.x"
+}
+```
+
+## Best Practices
+
+### Security
+
+- **Verify Webhooks**: Always validate webhook signatures
+- **Server-Side Only**: Never expose `STRIPE_API_KEY` to the client
+- **Idempotency**: Handle duplicate webhook events gracefully
+
+### User Experience
+
+- **Grace Period**: Allow 24-hour access after subscription expiration
+- **Clear Messaging**: Show subscription status clearly in the UI
+- **Easy Upgrades**: Make the upgrade button prominent for free users
+
+### Error Handling
+
+```typescript
+try {
+  const session = await stripe.checkout.sessions.create({...});
+} catch (error) {
+  if (error instanceof Stripe.errors.StripeError) {
+    console.error("Stripe error:", error.message);
+    return Response.json({ error: error.message }, { status: 400 });
+  }
+  throw error;
+}
+```
+
+## Troubleshooting
+
+### Subscription Not Recognized
+
+- Check that webhook events are being received and processed
+- Verify `user_subscriptions` table contains the subscription record
+- Ensure `stripeCurrentPeriodEnd` is in the future
+
+### Webhook Failures
+
+- Confirm webhook endpoint is publicly accessible
+- Verify `STRIPE_WEBHOOK_SECRET` matches the Dashboard
+- Check webhook logs in Stripe Dashboard for error details
+
+### Payment Issues
+
+- Test with Stripe's test card numbers: `4242 4242 4242 4242`
+- Ensure you're using the correct API keys (test vs. production)
+- Check that the price ID exists in your Stripe account
+
+## Testing
+
+Use Stripe CLI to test webhooks locally:
+
+```bash
+stripe listen --forward-to localhost:3000/api/webhook/stripe
+stripe trigger checkout.session.completed
+```

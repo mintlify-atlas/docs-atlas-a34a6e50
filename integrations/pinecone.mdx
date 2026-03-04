@@ -1,0 +1,215 @@
+---
+title: "Pinecone Vector Database"
+description: "Store and query PDF embeddings using Pinecone vector database for semantic search"
+---
+
+## Overview
+
+Pinecone serves as the vector database for PDF AI, storing document embeddings and enabling fast semantic similarity searches. When users upload a PDF, it's split into chunks, embedded using OpenAI, and stored in Pinecone for retrieval.
+
+## Configuration
+
+### Environment Variables
+
+Add your Pinecone credentials to `.env`:
+
+```bash
+PINECONE_API_KEY=your-api-key
+PINECONE_ENVIRONMENT=your-environment
+```
+
+<Note>
+  Get your credentials from the [Pinecone Console](https://app.pinecone.io/)
+</Note>
+
+### Index Setup
+
+Create a Pinecone index named `aipdf` with the following configuration:
+
+- **Dimensions**: 1536 (matches OpenAI's `text-embedding-ada-002` output)
+- **Metric**: Cosine similarity
+- **Namespace**: Each PDF uses a unique namespace based on its file key
+
+## Implementation
+
+The Pinecone client is initialized in `src/lib/pinecone.ts:14-22`:
+
+```typescript
+import { Pinecone, Vector, PineconeRecord } from "@pinecone-database/pinecone";
+
+let pinecone: Pinecone | null = null;
+
+export const getPineconeClient = async () => {
+  if (!pinecone) {
+    pinecone = new Pinecone({
+      apiKey: process.env.PINECONE_API_KEY!,
+      environment: process.env.PINECONE_ENVIRONMENT!,
+    });
+  }
+  return pinecone;
+};
+```
+
+<Info>
+  The client uses a singleton pattern to reuse the same connection across function calls
+</Info>
+
+## PDF Processing Pipeline
+
+The main function `loadS3IntoPinecone()` handles the complete PDF-to-vector workflow (`src/lib/pinecone.ts:31-54`):
+
+```typescript
+export async function loadS3IntoPinecone(fileKey: string) {
+  // 1. Download the PDF from S3
+  console.log("downloading from s3...");
+  const file_name = await downloadFromS3(fileKey);
+  if (!file_name) {
+    throw new Error("unable to download file from s3");
+  }
+  
+  // 2. Load PDF using LangChain
+  const loader = new PDFLoader(file_name);
+  const pages = (await loader.load()) as PDFPage[];
+  
+  // 3. Split documents into chunks
+  const documents = await Promise.all(pages.map(prepareDocument));
+
+  // 4. Generate embeddings for each chunk
+  const vectors = await Promise.all(documents.flat().map(embedDocument));
+
+  // 5. Upload to Pinecone
+  const client = await getPineconeClient();
+  const pineconeIndex = await client.Index("aipdf");
+  const namespace = pineconeIndex.namespace(convertToAscii(fileKey));
+  console.log("uploading to pinecone...");
+
+  await namespace.upsert(vectors);
+  return documents[0];
+}
+```
+
+## Document Preparation
+
+PDFs are split into manageable chunks using `RecursiveCharacterTextSplitter` (`src/lib/pinecone.ts:83-100`):
+
+```typescript
+async function prepareDocument(page: PDFPage) {
+  let { pageContent, metadata } = page;
+
+  pageContent = pageContent.replace(/\n/g, ""); // Remove new lines
+  
+  // Split document into chunks
+  const splitter = new RecursiveCharacterTextSplitter();
+  const docs = await splitter.splitDocuments([
+    new Document({
+      pageContent,
+      metadata: {
+        pageNumber: metadata.loc.pageNumber,
+        text: truncateStringByBytes(pageContent, 36000),
+      },
+    }),
+  ]);
+  return docs;
+}
+```
+
+<Warning>
+  Pinecone has a metadata size limit of 40KB per vector. Text is truncated to 36,000 bytes to stay within this limit.
+</Warning>
+
+## Vector Creation
+
+Each document chunk is converted to a Pinecone record (`src/lib/pinecone.ts:56-72`):
+
+```typescript
+async function embedDocument(doc: Document) {
+  try {
+    const embeddings = await getEmbeddings(doc.pageContent);
+    const hash = md5(doc.pageContent); // Unique ID for the document
+    return {
+      id: hash,
+      values: embeddings,
+      metadata: {
+        text: doc.metadata.text,
+        pageNumber: doc.metadata.pageNumber,
+      },
+    } as PineconeRecord;
+  } catch (error) {
+    console.log(error);
+    throw new Error("unable to embed document");
+  }
+}
+```
+
+## Key Features
+
+### Namespace Isolation
+
+Each PDF is stored in its own namespace to prevent cross-contamination:
+
+```typescript
+const namespace = pineconeIndex.namespace(convertToAscii(fileKey));
+```
+
+### MD5 Hashing
+
+Document chunks are identified using MD5 hashes of their content, ensuring idempotency:
+
+```typescript
+const hash = md5(doc.pageContent);
+```
+
+### Metadata Storage
+
+Each vector stores:
+- **text**: The original text content (truncated to 36KB)
+- **pageNumber**: The source page number for citations
+
+## API Reference
+
+<ParamField path="fileKey" type="string" required>
+  The S3 file key identifying the PDF to process
+</ParamField>
+
+<ParamField path="index" type="string" default="aipdf" required>
+  The Pinecone index name where vectors are stored
+</ParamField>
+
+<ParamField path="namespace" type="string" required>
+  Unique namespace per PDF, derived from the file key
+</ParamField>
+
+## Dependencies
+
+```json
+{
+  "@pinecone-database/pinecone": "^1.x.x",
+  "@pinecone-database/doc-splitter": "^0.x.x",
+  "langchain": "^0.x.x",
+  "md5": "^2.x.x"
+}
+```
+
+## Best Practices
+
+- **Batch Uploads**: Use `Promise.all()` for parallel embedding generation
+- **Error Handling**: Wrap Pinecone operations in try-catch blocks
+- **Namespace Management**: Use ASCII-safe namespace names
+- **Metadata Limits**: Keep metadata under 40KB per vector
+- **Index Configuration**: Match embedding dimensions (1536 for OpenAI)
+
+## Troubleshooting
+
+### Common Issues
+
+**Connection Errors**
+- Verify `PINECONE_API_KEY` and `PINECONE_ENVIRONMENT` are set correctly
+- Ensure the index `aipdf` exists in your Pinecone project
+
+**Upsert Failures**
+- Check that embedding dimensions match index configuration (1536)
+- Ensure metadata size doesn't exceed 40KB
+
+**Namespace Issues**
+- Confirm namespace names contain only ASCII characters
+- Use `convertToAscii()` helper for file keys with special characters

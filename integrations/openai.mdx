@@ -1,0 +1,125 @@
+---
+title: "OpenAI Integration"
+description: "Generate text embeddings for PDF content using OpenAI's embedding API"
+---
+
+## Overview
+
+PDF AI uses OpenAI's `text-embedding-ada-002` model to convert PDF text into vector embeddings. These embeddings enable semantic search and AI-powered chat functionality by representing document content as numerical vectors.
+
+## Configuration
+
+### Environment Variables
+
+Add your OpenAI API key to your `.env` file:
+
+```bash
+OPEN_AI_KEY=sk-your-api-key-here
+```
+
+<Note>
+  Get your API key from the [OpenAI Platform Dashboard](https://platform.openai.com/api-keys)
+</Note>
+
+## Implementation
+
+The OpenAI integration is implemented in `src/lib/embeddings.ts:1-22`:
+
+```typescript
+import { OpenAIApi, Configuration } from "openai-edge";
+
+const config = new Configuration({
+  apiKey: process.env.OPEN_AI_KEY,
+});
+
+const openai = new OpenAIApi(config);
+
+export async function getEmbeddings(text: string) {
+  try {
+    const response = await openai.createEmbedding({
+      model: "text-embedding-ada-002",
+      input: text.replace(/\n/g, " "),
+    });
+    const result = await response.json();
+    return result.data[0].embedding as number[];
+  } catch (error) {
+    console.log("error calling openai embeddings api", error);
+    throw error;
+  }
+}
+```
+
+## How It Works
+
+1. **Text Preprocessing**: Newline characters are replaced with spaces to normalize the input
+2. **API Call**: The text is sent to OpenAI's embedding endpoint using the `text-embedding-ada-002` model
+3. **Vector Output**: Returns a 1536-dimensional vector representing the semantic meaning of the text
+4. **Error Handling**: Logs and propagates errors for debugging
+
+## Usage in the Application
+
+The `getEmbeddings()` function is called during the PDF processing pipeline (see `src/lib/pinecone.ts:58`):
+
+```typescript
+async function embedDocument(doc: Document) {
+  try {
+    const embeddings = await getEmbeddings(doc.pageContent);
+    const hash = md5(doc.pageContent);
+    return {
+      id: hash,
+      values: embeddings,
+      metadata: {
+        text: doc.metadata.text,
+        pageNumber: doc.metadata.pageNumber,
+      },
+    } as PineconeRecord;
+  } catch (error) {
+    console.log(error);
+    throw new Error("unable to embed document");
+  }
+}
+```
+
+## API Parameters
+
+<ParamField path="model" type="string" default="text-embedding-ada-002" required>
+  The OpenAI embedding model to use. Currently configured for `text-embedding-ada-002`
+</ParamField>
+
+<ParamField path="input" type="string" required>
+  The text to generate embeddings for. Newlines are automatically replaced with spaces
+</ParamField>
+
+## Best Practices
+
+<Warning>
+  OpenAI embeddings are rate-limited. For production applications, implement retry logic and rate limiting to handle API throttling.
+</Warning>
+
+- **Text Length**: The `text-embedding-ada-002` model supports up to 8,191 tokens per request
+- **Batch Processing**: For multiple documents, process embeddings in parallel using `Promise.all()`
+- **Cost Optimization**: Cache embeddings to avoid regenerating them for unchanged content
+- **Error Handling**: Always wrap API calls in try-catch blocks to handle network failures
+
+## Dependencies
+
+```json
+{
+  "openai-edge": "^1.x.x"
+}
+```
+
+The application uses `openai-edge`, a lightweight OpenAI client optimized for edge runtime environments.
+
+## Troubleshooting
+
+<Info>
+  If you encounter authentication errors, verify that your `OPEN_AI_KEY` environment variable is correctly set and that your API key has sufficient credits.
+</Info>
+
+### Common Issues
+
+- **Invalid API Key**: Ensure the `OPEN_AI_KEY` is correctly formatted and active
+- **Rate Limiting**: Implement exponential backoff for retry logic
+- **Token Limits**: Split large text chunks before sending to the API
+- **Network Errors**: Add timeout handling for slow or failed requests

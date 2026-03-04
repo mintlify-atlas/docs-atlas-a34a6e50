@@ -1,0 +1,289 @@
+---
+title: Deployment
+description: Deploy PDF AI to production using Vercel with Edge Functions
+---
+
+## Overview
+
+PDF AI is designed to be deployed on [Vercel](https://vercel.com) with Edge Functions for optimal performance. The application leverages Vercel's serverless infrastructure to provide fast, scalable PDF processing and AI-powered chat capabilities.
+
+<Warning>
+  There is currently a known issue with Vercel Edge Functions deployment. The application works perfectly in local development but may experience issues in the deployed version. See the [Known Issues](#known-issues) section below.
+</Warning>
+
+## Deploying to Vercel
+
+<Steps>
+  <Step title="Connect your repository">
+    1. Push your code to GitHub, GitLab, or Bitbucket
+    2. Log in to [Vercel](https://vercel.com)
+    3. Click "New Project"
+    4. Import your repository
+    
+    <Info>
+      Vercel will automatically detect that this is a Next.js project and configure the build settings.
+    </Info>
+  </Step>
+
+  <Step title="Configure environment variables">
+    In the Vercel project settings, add all required environment variables:
+    
+    **Database:**
+    - `DATABASE_URL`
+    
+    **OpenAI:**
+    - `OPEN_AI_KEY`
+    
+    **Pinecone:**
+    - `PINECONE_API_KEY`
+    - `PINECONE_ENVIRONMENT`
+    
+    **AWS S3:**
+    - `NEXT_PUBLIC_S3_ACCESS_KEY_ID`
+    - `NEXT_PUBLIC_S3_SECRET_ACCESS_KEY`
+    - `NEXT_PUBLIC_S3_BUCKET_NAME`
+    
+    **Clerk:**
+    - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+    - `CLERK_SECRET_KEY`
+    
+    **Stripe:**
+    - `STRIPE_API_KEY` (use live key `sk_live_...`)
+    - `STRIPE_WEBHOOK_SECRET`
+    
+    **Application:**
+    - `NEXT_BASE_URL` (e.g., `https://your-domain.vercel.app`)
+    
+    <Note>
+      Make sure to use production API keys and credentials, not test/development keys.
+    </Note>
+  </Step>
+
+  <Step title="Configure build settings">
+    Vercel should automatically detect these settings, but verify:
+    
+    - **Framework Preset:** Next.js
+    - **Build Command:** `next build`
+    - **Output Directory:** `.next`
+    - **Install Command:** `npm install`
+    - **Development Command:** `next dev`
+  </Step>
+
+  <Step title="Deploy">
+    Click "Deploy" to start the build process. Vercel will:
+    
+    1. Install dependencies
+    2. Run the Next.js build
+    3. Deploy to the edge network
+    4. Provide a production URL
+    
+    The deployment typically takes 2-5 minutes.
+  </Step>
+
+  <Step title="Configure custom domain (optional)">
+    To use a custom domain:
+    
+    1. Go to your project settings
+    2. Navigate to "Domains"
+    3. Add your custom domain
+    4. Configure DNS records as instructed
+  </Step>
+</Steps>
+
+## Edge Functions
+
+PDF AI uses Vercel Edge Functions for API routes to provide:
+
+- **Low latency:** Edge Functions run closer to your users
+- **Global distribution:** Automatically deployed to Vercel's global edge network
+- **Scalability:** Automatically scales based on demand
+
+### Edge Runtime Compatibility
+
+The following API routes are designed to work with Edge Runtime:
+
+- `/api/chat` - AI chat endpoint (src/app/api/chat/route.ts:13)
+- `/api/stripe` - Stripe checkout (src/app/api/stripe/route.ts:9)
+- `/api/webhook` - Stripe webhooks (src/app/api/webhook/route.ts:20)
+
+<Info>
+  Edge Functions have some limitations compared to Node.js serverless functions. Ensure all dependencies are compatible with the Edge Runtime.
+</Info>
+
+## Production Considerations
+
+### Memory Configuration
+
+In production, you may need to adjust memory limits for processing large PDFs:
+
+```json package.json
+{
+  "scripts": {
+    "build": "cross-env NODE_OPTIONS=--max-old-space-size=8192 next build"
+  }
+}
+```
+
+### Database Connection Pooling
+
+PDF AI uses Neon's serverless driver which automatically handles connection pooling. No additional configuration is needed, but ensure your Neon plan supports the expected number of concurrent connections.
+
+### S3 CORS Configuration
+
+Ensure your S3 bucket has proper CORS configuration for your production domain:
+
+<CodeGroup>
+  ```json CORS Configuration
+  [
+    {
+      "AllowedHeaders": ["*"],
+      "AllowedMethods": ["GET", "PUT", "POST", "DELETE"],
+      "AllowedOrigins": [
+        "https://your-domain.vercel.app",
+        "https://your-custom-domain.com"
+      ],
+      "ExposeHeaders": ["ETag"]
+    }
+  ]
+  ```
+</CodeGroup>
+
+### Stripe Webhooks
+
+Configure your Stripe webhook endpoint:
+
+1. Go to Stripe Dashboard → Developers → Webhooks
+2. Add endpoint: `https://your-domain.vercel.app/api/webhook`
+3. Select events to listen for (e.g., `checkout.session.completed`)
+4. Copy the webhook signing secret to `STRIPE_WEBHOOK_SECRET`
+
+### Clerk Domain Configuration
+
+Update your Clerk application with the production domain:
+
+1. Go to Clerk Dashboard → Your Application
+2. Navigate to "Paths"
+3. Update the Home URL and callback URLs to your production domain
+
+## Monitoring and Debugging
+
+### Vercel Logs
+
+Access real-time logs from your Vercel dashboard:
+
+1. Go to your project
+2. Click on "Deployments"
+3. Select a deployment
+4. View logs in the "Functions" tab
+
+### Error Tracking
+
+Consider integrating error tracking services:
+
+- **Sentry:** Comprehensive error tracking
+- **LogRocket:** Session replay and error tracking
+- **Vercel Analytics:** Built-in analytics and Web Vitals
+
+### Performance Monitoring
+
+Monitor your application performance:
+
+- **Vercel Analytics:** Enable in project settings
+- **Web Vitals:** Track Core Web Vitals metrics
+- **Custom Logging:** Add logging to critical paths
+
+## Deployment Checklist
+
+Before deploying to production:
+
+- [ ] All environment variables configured in Vercel
+- [ ] Production API keys (not test keys) are being used
+- [ ] Database migrations have been run
+- [ ] S3 bucket CORS is configured for production domain
+- [ ] Stripe webhook endpoint is configured
+- [ ] Clerk domain settings are updated
+- [ ] Custom domain DNS is configured (if applicable)
+- [ ] Error tracking is set up
+- [ ] Analytics are enabled
+
+## Known Issues
+
+<Warning>
+  **Edge Function Deployment Issue:** There is currently a known issue where the application works perfectly in local development but encounters problems when deployed to Vercel Edge Functions.
+</Warning>
+
+### Current Status
+
+- Local development: Fully functional
+- Vercel deployment: Experiencing issues with Edge Functions
+
+### Potential Causes
+
+1. **Edge Runtime Compatibility:** Some dependencies may not be compatible with the Edge Runtime
+2. **Environment Variables:** Edge Functions may have different variable scoping
+3. **Memory Limits:** Edge Functions have stricter memory constraints
+4. **Cold Starts:** First request after deployment may timeout
+
+### Workarounds
+
+While the team works on resolving the Edge Function issue, consider:
+
+1. **Use Node.js Runtime:** Modify API routes to use Node.js runtime instead of Edge:
+   ```typescript
+   export const runtime = 'nodejs'; // instead of 'edge'
+   ```
+
+2. **Increase Function Duration:** In `vercel.json`:
+   ```json
+   {
+     "functions": {
+       "api/**/*.ts": {
+         "maxDuration": 60
+       }
+     }
+   }
+   ```
+
+3. **Test Thoroughly:** Deploy to a preview environment first:
+   ```bash
+   vercel --prod=false
+   ```
+
+### Contributing to the Fix
+
+If you'd like to help resolve this issue:
+
+1. Clone the repository
+2. Test locally to confirm it works
+3. Deploy to Vercel and document the error
+4. Submit a pull request with potential fixes
+5. Share your findings in the project issues
+
+## Continuous Deployment
+
+Vercel automatically deploys:
+
+- **Production:** When you push to the main/master branch
+- **Preview:** When you create a pull request
+- **Development:** When you push to development branches
+
+Each deployment gets a unique URL for testing before promoting to production.
+
+## Rollback
+
+If a deployment causes issues:
+
+1. Go to your project in Vercel
+2. Navigate to "Deployments"
+3. Find the last working deployment
+4. Click the three dots menu
+5. Select "Promote to Production"
+
+This instantly rolls back to the previous version.
+
+## Getting Help
+
+- **Vercel Documentation:** [vercel.com/docs](https://vercel.com/docs)
+- **Next.js Deployment:** [nextjs.org/docs/deployment](https://nextjs.org/docs/deployment)
+- **Project Repository:** [github.com/Srijan-D/pdf.ai](https://github.com/Srijan-D/pdf.ai)
+- **Vercel Support:** support@vercel.com

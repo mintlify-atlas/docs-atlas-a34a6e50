@@ -1,0 +1,405 @@
+---
+title: "Neon PostgreSQL Database"
+description: "Store application data with Neon's serverless PostgreSQL database using Drizzle ORM"
+---
+
+## Overview
+
+PDF AI uses Neon as its PostgreSQL database provider, combined with Drizzle ORM for type-safe database operations. Neon provides serverless Postgres with features like automatic scaling, branching, and generous free tier.
+
+## Configuration
+
+### Environment Variables
+
+Add your Neon database connection string to `.env`:
+
+```bash
+DATABASE_URL=postgresql://user:password@ep-name.region.aws.neon.tech/dbname?sslmode=require
+```
+
+<Note>
+  Get your connection string from the [Neon Console](https://console.neon.tech/) after creating a project
+</Note>
+
+### Drizzle Configuration
+
+The Drizzle configuration is defined in `drizzle.config.ts:1-14`:
+
+```typescript
+import type { Config } from "drizzle-kit";
+import * as dotenv from "dotenv";
+dotenv.config({ path: ".env" });
+
+export default {
+  driver: "pg",
+  schema: "./src/lib/db/schema.ts",
+  dbCredentials: {
+    connectionString: process.env.DATABASE_URL!,
+  },
+} satisfies Config;
+```
+
+<Info>
+  The `dotenv` package is imported to ensure environment variables are available during migration runs.
+</Info>
+
+## Database Schema
+
+The application uses three main tables defined in `src/lib/db/schema.ts:1-40`:
+
+### Chats Table
+
+Stores PDF chat sessions:
+
+```typescript
+export const chats = pgTable('chats', {
+  id: serial('id').primaryKey(),
+  pdfName: text('pdf_name').notNull(),
+  pdfUrl: text('pdf_url').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  userId: varchar('user_id', { length: 255 }).notNull(),
+  fileKey: text('file_key').notNull(),
+});
+
+export type DrizzleChat = typeof chats.$inferSelect;
+```
+
+#### Fields
+
+<ParamField path="id" type="serial" required>
+  Auto-incrementing primary key
+</ParamField>
+
+<ParamField path="pdfName" type="text" required>
+  The original filename of the uploaded PDF
+</ParamField>
+
+<ParamField path="pdfUrl" type="text" required>
+  The public S3 URL to access the PDF
+</ParamField>
+
+<ParamField path="userId" type="varchar(255)" required>
+  The Clerk user ID who owns this chat
+</ParamField>
+
+<ParamField path="fileKey" type="text" required>
+  The S3 file key for downloading the PDF
+</ParamField>
+
+<ParamField path="createdAt" type="timestamp" required>
+  Automatically set to the current timestamp on creation
+</ParamField>
+
+### Messages Table
+
+Stores conversation messages:
+
+```typescript
+export const userSystemEnum = pgEnum('user_system_enum', ['user', 'system']);
+
+export const messages = pgTable('messages', {
+  id: serial('id').primaryKey(),
+  chatId: integer('chat_id').references(() => chats.id).notNull(),
+  content: text('content').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  role: userSystemEnum('role').notNull(),
+});
+```
+
+#### Relationships
+
+- **One-to-Many**: Each chat can have many messages
+- **Foreign Key**: `chatId` references `chats.id`
+
+#### Fields
+
+<ParamField path="chatId" type="integer" required>
+  Foreign key linking to the parent chat
+</ParamField>
+
+<ParamField path="content" type="text" required>
+  The message text content
+</ParamField>
+
+<ParamField path="role" type="enum" required>
+  Either 'user' (human message) or 'system' (AI response)
+</ParamField>
+
+### User Subscriptions Table
+
+Tracks Stripe subscription status:
+
+```typescript
+export const userSubscriptions = pgTable("user_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id", { length: 256 }).notNull().unique(),
+  stripeCustomerId: varchar("stripe_customer_id", { length: 256 })
+    .notNull()
+    .unique(),
+  stripeSubscriptionId: varchar("stripe_subscription_id", {
+    length: 256,
+  }).unique(),
+  stripePriceId: varchar("stripe_price_id", { length: 256 }),
+  stripeCurrentPeriodEnd: timestamp("stripe_current_period_ended_at"),
+});
+```
+
+<Warning>
+  The `userId` and `stripeCustomerId` fields are marked as unique to prevent duplicate subscriptions.
+</Warning>
+
+## Database Connection
+
+Initialize the Drizzle client:
+
+```typescript
+import { drizzle } from 'drizzle-orm/neon-http';
+import { neon } from '@neondatabase/serverless';
+
+const sql = neon(process.env.DATABASE_URL!);
+export const db = drizzle(sql);
+```
+
+## Common Operations
+
+### Querying Chats
+
+Get all chats for a user (`src/app/page.tsx:19-24`):
+
+```typescript
+import { db } from "@/lib/db";
+import { chats } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+
+if (userId) {
+  const userChats = await db
+    .select()
+    .from(chats)
+    .where(eq(chats.userId, userId));
+  
+  const firstChat = userChats[0];
+}
+```
+
+### Inserting a Chat
+
+```typescript
+import { db } from "@/lib/db";
+import { chats } from "@/lib/db/schema";
+
+await db.insert(chats).values({
+  pdfName: "document.pdf",
+  pdfUrl: "https://bucket.s3.amazonaws.com/uploads/document.pdf",
+  userId: "user_abc123",
+  fileKey: "uploads/1234567890-document.pdf",
+});
+```
+
+### Querying Subscriptions
+
+Check if user has an active subscription (`src/lib/subscription.ts:11-15`):
+
+```typescript
+import { userSubscriptions } from "./db/schema";
+import { eq } from "drizzle-orm";
+
+const _userSubscriptions = await db
+  .select()
+  .from(userSubscriptions)
+  .where(eq(userSubscriptions.userId, userId));
+
+const subscription = _userSubscriptions[0];
+```
+
+### Creating Messages
+
+```typescript
+import { messages } from "@/lib/db/schema";
+
+await db.insert(messages).values({
+  chatId: 1,
+  content: "What is this document about?",
+  role: "user",
+});
+
+await db.insert(messages).values({
+  chatId: 1,
+  content: "This document discusses...",
+  role: "system",
+});
+```
+
+### Joining Tables
+
+Get chat with all messages:
+
+```typescript
+import { chats, messages } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+
+const chatWithMessages = await db
+  .select()
+  .from(chats)
+  .leftJoin(messages, eq(chats.id, messages.chatId))
+  .where(eq(chats.id, chatId));
+```
+
+## Migrations
+
+Drizzle Kit handles database migrations:
+
+### Generate Migration
+
+After modifying `schema.ts`, generate a migration:
+
+```bash
+npx drizzle-kit generate:pg
+```
+
+### Apply Migration
+
+Run migrations against your database:
+
+```bash
+npx drizzle-kit push:pg
+```
+
+<Note>
+  Migrations are stored in the `drizzle` directory and should be committed to version control.
+</Note>
+
+### Drizzle Studio
+
+Browse your database with a visual interface:
+
+```bash
+npx drizzle-kit studio
+```
+
+This opens a web UI at `https://local.drizzle.studio` for exploring tables and data.
+
+## Type Safety
+
+Drizzle provides full TypeScript support:
+
+```typescript
+// Infer types from schema
+export type DrizzleChat = typeof chats.$inferSelect;
+export type InsertChat = typeof chats.$inferInsert;
+
+// Use in your code
+const chat: DrizzleChat = await db.query.chats.findFirst();
+```
+
+## Neon Features
+
+### Serverless Architecture
+
+- **Auto-scaling**: Automatically scales compute based on load
+- **Scale to Zero**: Pauses during inactivity to save costs
+- **Instant Activation**: Resumes in milliseconds when accessed
+
+### Branching
+
+Create database branches for development:
+
+```bash
+neon branches create --name development
+```
+
+Each branch has its own connection string, perfect for testing migrations.
+
+### Connection Pooling
+
+Neon automatically manages connection pooling for optimal performance.
+
+## Dependencies
+
+```json
+{
+  "drizzle-orm": "^0.28.x",
+  "drizzle-kit": "^0.19.x",
+  "@neondatabase/serverless": "^0.6.x",
+  "dotenv": "^16.x.x"
+}
+```
+
+## Best Practices
+
+### Connection Management
+
+- **Reuse Connections**: Initialize `db` once and import it everywhere
+- **Serverless Optimization**: Neon's HTTP API is ideal for serverless functions
+- **Connection String Security**: Never commit `.env` files to version control
+
+### Schema Design
+
+- **Foreign Keys**: Use `.references()` for referential integrity
+- **Indexes**: Add indexes on frequently queried columns (e.g., `userId`)
+- **Enums**: Use `pgEnum` for fields with fixed values
+
+### Query Optimization
+
+```typescript
+// Bad: N+1 query problem
+for (const chat of chats) {
+  const messages = await db.select().from(messages).where(eq(messages.chatId, chat.id));
+}
+
+// Good: Single query with join
+const chatsWithMessages = await db
+  .select()
+  .from(chats)
+  .leftJoin(messages, eq(chats.id, messages.chatId));
+```
+
+### Error Handling
+
+```typescript
+try {
+  await db.insert(chats).values({...});
+} catch (error) {
+  if (error.code === '23505') {
+    // Unique constraint violation
+    console.error('Duplicate entry');
+  }
+  throw error;
+}
+```
+
+## Troubleshooting
+
+### Connection Errors
+
+- Verify `DATABASE_URL` is correctly formatted with `sslmode=require`
+- Check that your IP is allowed in Neon's connection settings
+- Ensure the database exists and is not paused
+
+### Migration Issues
+
+- **Schema Drift**: Run `drizzle-kit generate` after every schema change
+- **Failed Migrations**: Check Neon logs in the console for error details
+- **Breaking Changes**: Use Neon branches to test migrations before applying to production
+
+### Type Errors
+
+- Regenerate migrations after schema changes: `npx drizzle-kit generate`
+- Restart your TypeScript server to pick up new types
+- Check for mismatched imports from `schema.ts`
+
+## Performance Tips
+
+- **Indexes**: Add indexes on foreign keys and frequently filtered columns
+- **Limit Results**: Use `.limit()` for paginated queries
+- **Select Specific Columns**: Only select needed fields to reduce data transfer
+- **Connection Pooling**: Neon handles this automatically for HTTP connections
+
+```typescript
+// Efficient query
+const recentChats = await db
+  .select({ id: chats.id, pdfName: chats.pdfName })
+  .from(chats)
+  .where(eq(chats.userId, userId))
+  .orderBy(desc(chats.createdAt))
+  .limit(10);
+```

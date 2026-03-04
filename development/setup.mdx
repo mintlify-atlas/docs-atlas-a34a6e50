@@ -1,0 +1,163 @@
+---
+title: Local Development Setup
+description: Set up your local development environment for PDF AI
+---
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed on your machine:
+
+- Node.js (v18 or higher)
+- npm, yarn, or bun package manager
+- Git
+
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the PDF AI repository to your local machine:
+    
+    ```bash
+    git clone https://github.com/Srijan-D/pdf.ai
+    cd pdf.ai
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Install the required dependencies using your preferred package manager:
+    
+    <CodeGroup>
+      ```bash npm
+      npm install
+      ```
+      
+      ```bash yarn
+      yarn install
+      ```
+      
+      ```bash bun
+      bun install
+      ```
+    </CodeGroup>
+    
+    <Info>
+      The project includes these key dependencies:
+      - Next.js 13.5.6 (React framework)
+      - Clerk for authentication
+      - Pinecone for vector database
+      - OpenAI for AI capabilities
+      - Stripe for payments
+      - AWS SDK for S3 storage
+      - Drizzle ORM with Neon database
+    </Info>
+  </Step>
+
+  <Step title="Configure environment variables">
+    Set up your environment variables by creating a `.env` file in the root directory. See the [Environment Variables](/development/environment-variables) page for detailed configuration.
+    
+    ```bash
+    touch .env
+    ```
+    
+    Add all required API keys and configuration values to this file.
+  </Step>
+
+  <Step title="Set up the database">
+    Run the database migrations using Drizzle Kit:
+    
+    ```bash
+    npx drizzle-kit push
+    ```
+    
+    This will create the necessary tables in your Neon database.
+  </Step>
+
+  <Step title="Start the development server">
+    Start the local development server:
+    
+    <CodeGroup>
+      ```bash npm
+      npm run dev
+      ```
+      
+      ```bash yarn
+      yarn dev
+      ```
+      
+      ```bash bun
+      bun dev
+      ```
+    </CodeGroup>
+    
+    The application will be available at `http://localhost:3000`.
+    
+    <Note>
+      The dev script uses `cross-env NODE_OPTIONS=--max-old-space-size=8192` to allocate 8GB of memory to Node.js, which is necessary for processing large PDFs.
+    </Note>
+  </Step>
+</Steps>
+
+## Development Scripts
+
+The following npm scripts are available:
+
+| Script | Command | Description |
+|--------|---------|-------------|
+| `dev` | `npm run dev` | Starts the development server with increased memory allocation |
+| `build` | `npm run build` | Creates an optimized production build |
+| `start` | `npm start` | Runs the production build locally |
+| `lint` | `npm run lint` | Runs ESLint to check code quality |
+
+## Project Structure
+
+```
+pdf.ai/
+├── src/
+│   ├── app/              # Next.js App Router pages
+│   │   └── api/          # API routes
+│   │       ├── chat/     # Chat endpoint
+│   │       ├── stripe/   # Stripe integration
+│   │       └── webhook/  # Webhook handlers
+│   ├── components/       # React components
+│   ├── lib/              # Utility libraries
+│   │   ├── db/           # Database schema and config
+│   │   ├── embeddings.ts # OpenAI embeddings
+│   │   ├── pinecone.ts   # Pinecone vector DB
+│   │   ├── s3.ts         # AWS S3 client
+│   │   ├── stripe.ts     # Stripe client
+│   │   └── context.ts    # Context retrieval
+│   └── middleware.ts     # Clerk authentication
+├── drizzle.config.ts     # Drizzle ORM configuration
+├── next.config.js        # Next.js configuration
+└── package.json          # Project dependencies
+```
+
+## Troubleshooting
+
+### Memory Issues
+
+If you encounter memory errors during development, the project already includes increased memory allocation in the dev script. If you still face issues, you can increase it further:
+
+```bash
+cross-env NODE_OPTIONS=--max-old-space-size=16384 next dev
+```
+
+### Database Connection
+
+If you have issues connecting to the database:
+
+1. Verify your `DATABASE_URL` is correctly set in `.env`
+2. Ensure your Neon database is accessible
+3. Check that you've run the Drizzle migrations
+
+### API Key Errors
+
+If you see authentication or API errors:
+
+1. Double-check all API keys are correctly set in `.env`
+2. Ensure there are no extra spaces or quotes around the values
+3. Restart the development server after changing environment variables
+
+<Warning>
+  The application works perfectly in local development but may have issues when deployed. See the [Deployment](/development/deployment) page for known issues and workarounds.
+</Warning>

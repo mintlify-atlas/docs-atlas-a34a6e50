@@ -1,0 +1,377 @@
+---
+title: Managing Subscriptions
+description: Learn how to upgrade to Pro, manage your billing, and understand subscription features
+---
+
+# Managing Subscriptions
+
+PDF AI offers both free and Pro subscription tiers. This guide covers everything you need to know about upgrading, managing your subscription, and accessing the billing portal.
+
+## Subscription Tiers
+
+### Free Tier
+
+The free tier includes:
+- Basic PDF upload and chat functionality
+- Standard response times
+- Limited number of PDFs and messages
+
+### Pro Tier
+
+Upgrade to Pro for:
+- Unlimited PDF uploads
+- Unlimited messages and conversations
+- Priority processing and faster responses
+- Extended message history
+- Premium support
+
+<Info>
+**Pro Pricing**: ₹1,600/month (INR)
+
+Billing is handled securely through Stripe with automatic monthly renewal.
+</Info>
+
+## How to Upgrade to Pro
+
+<Steps>
+  <Step title="Click 'Get Pro' Button">
+    On the homepage (after signing in), you'll see a "Get Pro" button in the top section. Click it to start the upgrade process.
+  </Step>
+
+  <Step title="Checkout Session">
+    You'll be redirected to a secure Stripe checkout page where you can:
+    - Review the subscription details
+    - Enter your payment information
+    - Confirm your billing address
+  </Step>
+
+  <Step title="Complete Payment">
+    Enter your credit card details and complete the payment. Stripe accepts all major credit cards.
+  </Step>
+
+  <Step title="Confirmation">
+    After successful payment:
+    - You'll be redirected back to PDF AI
+    - Your account is immediately upgraded to Pro
+    - You can start using Pro features right away
+  </Step>
+</Steps>
+
+## How the Subscription Button Works
+
+The subscription button automatically detects your current status:
+
+```tsx SubscriptionButton.tsx
+const SubscriptionButton = (props: Props) => {
+  const [loading, setLoading] = React.useState(false);
+  const router = useRouter();
+  
+  const handleSubscription = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch("/api/stripe");
+      const data = await response.json();
+      
+      // Redirect to Stripe
+      router.push(data.url);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return (
+    <Button disabled={loading} onClick={handleSubscription}>
+      {props.isPro ? "Manage Subscriptions" : "Get Pro"}
+    </Button>
+  );
+};
+```
+
+**For Free Users**: Button shows "Get Pro" and takes you to checkout
+
+**For Pro Users**: Button shows "Manage Subscriptions" and takes you to the billing portal
+
+## Billing Portal
+
+Pro subscribers can access the Stripe billing portal to:
+
+- View current subscription status
+- Update payment method
+- View invoice history
+- Download receipts
+- Cancel subscription
+
+### Accessing the Billing Portal
+
+<Steps>
+  <Step title="Click 'Manage Subscriptions'">
+    As a Pro user, click the "Manage Subscriptions" button on the homepage.
+  </Step>
+
+  <Step title="Automatic Redirect">
+    You'll be automatically redirected to the secure Stripe billing portal.
+  </Step>
+
+  <Step title="Make Changes">
+    In the portal, you can update your payment method, view invoices, or manage your subscription.
+  </Step>
+
+  <Step title="Return to PDF AI">
+    When finished, click the return link to come back to PDF AI.
+  </Step>
+</Steps>
+
+## Backend Subscription Logic
+
+Here's how the system determines your subscription status:
+
+```typescript subscription.ts
+export const checkSubscription = async () => {
+  const { userId } = await auth();
+  if (!userId) return false;
+
+  const _userSubscriptions = await db
+    .select()
+    .from(userSubscriptions)
+    .where(eq(userSubscriptions.userId, userId));
+
+  if (!_userSubscriptions[0]) return false;
+
+  const userSubscription = _userSubscriptions[0];
+
+  // Check if subscription is valid
+  const isValid = 
+    userSubscription.stripePriceId && 
+    userSubscription.stripeCurrentPeriodEnd?.getTime()! + 
+    1000 * 60 * 60 * 24 > Date.now();
+
+  return !!isValid;
+};
+```
+
+The system checks:
+1. If you're signed in
+2. If you have a subscription record
+3. If your subscription is still active (within the billing period)
+
+<Note>
+You get a 24-hour grace period after your subscription end date before losing Pro features.
+</Note>
+
+## Subscription API Flow
+
+When you click the subscription button, here's what happens:
+
+```typescript route.ts
+// For existing Pro users - go to billing portal
+if (_userSubscriptions[0] && _userSubscriptions[0].stripeCustomerId) {
+  const stripeSession = await stripe.billingPortal.sessions.create({
+    customer: _userSubscriptions[0].stripeCustomerId,
+    return_url,
+  });
+  return NextResponse.json({ url: stripeSession.url });
+}
+
+// For new subscribers - create checkout session
+const stripeSession = await stripe.checkout.sessions.create({
+  success_url: return_url,
+  cancel_url: return_url,
+  payment_method_types: ["card"],
+  mode: "subscription",
+  billing_address_collection: "auto",
+  customer_email: user?.emailAddresses[0].emailAddress,
+  line_items: [
+    {
+      price_data: {
+        currency: "INR",
+        product_data: {
+          name: "Ai-PDF Pro",
+          description: "countless hours of time saved",
+        },
+        unit_amount: 160000, // ₹1,600 in paisa
+        recurring: {
+          interval: "month",
+        },
+      },
+      quantity: 1,
+    },
+  ],
+  metadata: {
+    userId,
+  },
+});
+```
+
+## Viewing Usage
+
+While in your account, you can:
+
+- **View Chat History**: See all your uploaded PDFs and conversations
+- **Access All Chats**: Pro users get unlimited chat storage
+- **Check Upload Count**: Monitor how many PDFs you've uploaded
+
+<Tip>
+The "Go to Chats" button on the homepage takes you to your most recent chat. From there, you can access all previous conversations through the sidebar.
+</Tip>
+
+## Downgrading or Cancelling
+
+### How to Cancel Your Subscription
+
+<Steps>
+  <Step title="Access Billing Portal">
+    Click "Manage Subscriptions" button while signed in.
+  </Step>
+
+  <Step title="Cancel Subscription">
+    In the Stripe billing portal, find the "Cancel subscription" option.
+  </Step>
+
+  <Step title="Confirm Cancellation">
+    Follow the prompts to confirm your cancellation.
+  </Step>
+
+  <Step title="Access Until Period End">
+    You'll retain Pro access until the end of your current billing period.
+  </Step>
+</Steps>
+
+<Warning>
+Cancelling your subscription:
+- Takes effect at the end of your current billing period
+- You won't be charged again
+- You keep Pro features until the period ends
+- After that, you revert to the free tier
+</Warning>
+
+### What Happens After Cancellation
+
+When your Pro subscription ends:
+
+- **Existing Chats**: Remain accessible
+- **Message History**: Preserved but may have viewing limits
+- **New Uploads**: Subject to free tier limitations
+- **Re-activation**: You can re-subscribe anytime
+
+## Updating Payment Method
+
+<Steps>
+  <Step title="Open Billing Portal">
+    Click "Manage Subscriptions" to access your Stripe billing portal.
+  </Step>
+
+  <Step title="Update Payment Method">
+    Click "Update payment method" in the portal.
+  </Step>
+
+  <Step title="Enter New Card">
+    Enter your new credit card information securely.
+  </Step>
+
+  <Step title="Save Changes">
+    Confirm the changes. Your next billing cycle will use the new payment method.
+  </Step>
+</Steps>
+
+<Info>
+Payment information is handled entirely by Stripe. PDF AI never sees or stores your credit card details.
+</Info>
+
+## Invoice History
+
+In the Stripe billing portal, you can:
+
+- View all past invoices
+- Download PDF receipts
+- See payment dates and amounts
+- Track your billing history
+- Get copies for expense reporting
+
+## Failed Payments
+
+If a payment fails:
+
+1. **Email Notification**: You'll receive an email from Stripe
+2. **Retry Attempts**: Stripe automatically retries the payment
+3. **Grace Period**: You get a grace period to update payment info
+4. **Downgrade**: If payment can't be processed, you'll be downgraded to free tier
+
+<Warning>
+Update your payment method as soon as possible if you receive a failed payment notification to avoid service interruption.
+</Warning>
+
+## Subscription Data Model
+
+Your subscription information is stored securely:
+
+```typescript schema.ts
+export const userSubscriptions = pgTable("user_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id", { length: 256 }).notNull().unique(),
+  stripeCustomerId: varchar("stripe_customer_id", { length: 256 })
+    .notNull()
+    .unique(),
+  stripeSubscriptionId: varchar("stripe_subscription_id", {
+    length: 256,
+  }).unique(),
+  stripePriceId: varchar("stripe_price_id", { length: 256 }),
+  stripeCurrentPeriodEnd: timestamp("stripe_current_period_ended_at"),
+});
+```
+
+This includes:
+- Your user ID (linked to your account)
+- Stripe customer ID
+- Subscription ID
+- Price ID
+- Current billing period end date
+
+## Security & Privacy
+
+<Tip>
+**Secure Processing**: All payment processing is handled by Stripe, a PCI-compliant payment processor used by millions of businesses worldwide.
+</Tip>
+
+- **No Card Storage**: PDF AI never stores your credit card information
+- **Encrypted Connections**: All payment data is transmitted over secure HTTPS
+- **Privacy First**: Subscription data is only used for billing purposes
+- **Secure Portal**: The billing portal requires authentication
+
+## Frequently Asked Questions
+
+<Accordion title="Can I get a refund?">
+  Refunds are handled on a case-by-case basis. Contact support through the billing portal or email to discuss refund requests.
+</Accordion>
+
+<Accordion title="Can I pause my subscription?">
+  There's no pause feature, but you can cancel and re-subscribe anytime. Your chat history is preserved.
+</Accordion>
+
+<Accordion title="Do you offer annual billing?">
+  Currently, only monthly billing is available at ₹1,600/month.
+</Accordion>
+
+<Accordion title="Can I upgrade from free anytime?">
+  Yes! Click "Get Pro" anytime to upgrade immediately. You'll be charged the monthly rate and billed monthly thereafter.
+</Accordion>
+
+<Accordion title="What happens to my PDFs if I cancel?">
+  Your uploaded PDFs and chat history remain in your account. You can still access them, but may have limitations on new uploads and messages under the free tier.
+</Accordion>
+
+<Accordion title="Can I get a receipt for taxes?">
+  Yes! All invoices are available in your Stripe billing portal and include all necessary information for tax purposes.
+</Accordion>
+
+## Need Help?
+
+<CardGroup cols={2}>
+  <Card title="Contact Support" icon="headset">
+    Reach out through the Stripe billing portal or email support for subscription issues
+  </Card>
+  <Card title="Uploading PDFs" icon="upload" href="/guide/uploading-pdfs">
+    Learn how to upload and work with PDF documents
+  </Card>
+</CardGroup>

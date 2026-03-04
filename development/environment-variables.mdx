@@ -1,0 +1,249 @@
+---
+title: Environment Variables
+description: Configure your PDF AI application with the required environment variables
+---
+
+## Overview
+
+PDF AI requires several environment variables to connect to external services and APIs. All environment variables should be stored in a `.env` file in the root of your project.
+
+<Warning>
+  Never commit your `.env` file to version control. Make sure `.env` is included in your `.gitignore` file.
+</Warning>
+
+## Required Variables
+
+### Database
+
+<CodeGroup>
+  ```bash .env
+  DATABASE_URL="postgresql://username:password@host/database?sslmode=require"
+  ```
+</CodeGroup>
+
+**Purpose:** Connection string for your Neon PostgreSQL database.
+
+**Where it's used:**
+- `src/lib/db/index.ts:5-7` - Database client initialization
+- `drizzle.config.ts:12` - Drizzle ORM configuration
+
+**How to get it:**
+1. Sign up at [Neon](https://neon.tech)
+2. Create a new project
+3. Copy the connection string from your project dashboard
+
+<Info>
+  The application will throw an error if `DATABASE_URL` is not found, as it's critical for all database operations.
+</Info>
+
+### OpenAI
+
+<CodeGroup>
+  ```bash .env
+  OPEN_AI_KEY="sk-..."
+  ```
+</CodeGroup>
+
+**Purpose:** API key for OpenAI GPT and embeddings.
+
+**Where it's used:**
+- `src/lib/embeddings.ts:4` - Creating PDF embeddings
+- `src/app/api/chat/route.ts:13` - Chat completions API
+
+**How to get it:**
+1. Sign up at [OpenAI](https://platform.openai.com)
+2. Navigate to API keys section
+3. Create a new secret key
+
+### Pinecone Vector Database
+
+<CodeGroup>
+  ```bash .env
+  PINECONE_API_KEY="your-pinecone-api-key"
+  PINECONE_ENVIRONMENT="your-environment"
+  ```
+</CodeGroup>
+
+**Purpose:** Connect to Pinecone vector database for semantic search and context retrieval.
+
+**Where it's used:**
+- `src/lib/pinecone.ts:17-18` - Pinecone client initialization
+- `src/lib/context.ts:24-25` - Context retrieval for chat
+
+**How to get it:**
+1. Sign up at [Pinecone](https://www.pinecone.io)
+2. Create a new index
+3. Copy your API key and environment from the console
+
+<Note>
+  Your Pinecone environment is typically something like `us-west1-gcp` or `us-east-1-aws`.
+</Note>
+
+### AWS S3 Storage
+
+<CodeGroup>
+  ```bash .env
+  NEXT_PUBLIC_S3_ACCESS_KEY_ID="your-access-key-id"
+  NEXT_PUBLIC_S3_SECRET_ACCESS_KEY="your-secret-access-key"
+  NEXT_PUBLIC_S3_BUCKET_NAME="your-bucket-name"
+  ```
+</CodeGroup>
+
+**Purpose:** Store and retrieve uploaded PDF files.
+
+**Where it's used:**
+- `src/lib/s3.ts:7-8,12,20,51` - Client-side S3 operations
+- `src/lib/s3-server.ts:6-7,11,16` - Server-side S3 operations
+
+**How to get it:**
+1. Sign up for [AWS](https://aws.amazon.com)
+2. Create an S3 bucket in the `ap-south-1` region (or modify the region in the code)
+3. Create an IAM user with S3 access
+4. Generate access keys for the IAM user
+
+<Warning>
+  These variables are prefixed with `NEXT_PUBLIC_` which means they are exposed to the browser. Ensure your S3 bucket has proper CORS and access policies configured.
+</Warning>
+
+### Clerk Authentication
+
+<CodeGroup>
+  ```bash .env
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
+  CLERK_SECRET_KEY="sk_test_..."
+  ```
+</CodeGroup>
+
+**Purpose:** User authentication and session management.
+
+**Where it's used:**
+- `src/app/layout.tsx:4,20` - ClerkProvider wrapper
+- `src/middleware.ts:1,6` - Authentication middleware
+
+**How to get it:**
+1. Sign up at [Clerk](https://clerk.com)
+2. Create a new application
+3. Copy the publishable key and secret key from the API Keys section
+
+### Stripe Payments
+
+<CodeGroup>
+  ```bash .env
+  STRIPE_API_KEY="sk_test_..."
+  STRIPE_WEBHOOK_SECRET="whsec_..."
+  ```
+</CodeGroup>
+
+**Purpose:** Process payments and handle subscription billing.
+
+**Where it's used:**
+- `src/lib/stripe.ts:3` - Stripe client initialization
+- `src/app/api/webhook/route.ts:20` - Webhook signature verification
+
+**How to get it:**
+1. Sign up at [Stripe](https://stripe.com)
+2. Get your API key from the Developers section
+3. Set up a webhook endpoint and copy the webhook secret
+
+<Info>
+  Use test mode keys (`sk_test_...`) during development. Switch to live keys (`sk_live_...`) only in production.
+</Info>
+
+### Application URL
+
+<CodeGroup>
+  ```bash .env
+  NEXT_BASE_URL="http://localhost:3000"
+  ```
+</CodeGroup>
+
+**Purpose:** Base URL for redirects and webhooks.
+
+**Where it's used:**
+- `src/app/api/stripe/route.ts:9` - Stripe checkout redirects
+
+**Values:**
+- Development: `http://localhost:3000`
+- Production: `https://your-domain.com`
+
+## Environment Variable Checklist
+
+Before running the application, ensure you have set:
+
+- [ ] `DATABASE_URL` - Neon PostgreSQL connection
+- [ ] `OPEN_AI_KEY` - OpenAI API key
+- [ ] `PINECONE_API_KEY` - Pinecone API key
+- [ ] `PINECONE_ENVIRONMENT` - Pinecone environment
+- [ ] `NEXT_PUBLIC_S3_ACCESS_KEY_ID` - AWS access key
+- [ ] `NEXT_PUBLIC_S3_SECRET_ACCESS_KEY` - AWS secret key
+- [ ] `NEXT_PUBLIC_S3_BUCKET_NAME` - S3 bucket name
+- [ ] `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` - Clerk publishable key
+- [ ] `CLERK_SECRET_KEY` - Clerk secret key
+- [ ] `STRIPE_API_KEY` - Stripe API key
+- [ ] `STRIPE_WEBHOOK_SECRET` - Stripe webhook secret
+- [ ] `NEXT_BASE_URL` - Application base URL
+
+## Example .env File
+
+<CodeGroup>
+  ```bash .env
+  # Database
+  DATABASE_URL="postgresql://user:pass@host.region.neon.tech/dbname?sslmode=require"
+
+  # OpenAI
+  OPEN_AI_KEY="sk-..."
+
+  # Pinecone
+  PINECONE_API_KEY="your-pinecone-key"
+  PINECONE_ENVIRONMENT="us-west1-gcp"
+
+  # AWS S3
+  NEXT_PUBLIC_S3_ACCESS_KEY_ID="AKIA..."
+  NEXT_PUBLIC_S3_SECRET_ACCESS_KEY="your-secret-key"
+  NEXT_PUBLIC_S3_BUCKET_NAME="pdf-ai-uploads"
+
+  # Clerk Authentication
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
+  CLERK_SECRET_KEY="sk_test_..."
+
+  # Stripe
+  STRIPE_API_KEY="sk_test_..."
+  STRIPE_WEBHOOK_SECRET="whsec_..."
+
+  # Application
+  NEXT_BASE_URL="http://localhost:3000"
+  ```
+</CodeGroup>
+
+## Security Best Practices
+
+<Steps>
+  <Step title="Never commit secrets">
+    Add `.env` to your `.gitignore` file:
+    ```bash
+    .env
+    .env.local
+    .env*.local
+    ```
+  </Step>
+
+  <Step title="Use environment-specific files">
+    - `.env.local` - Local development (git-ignored)
+    - `.env.production` - Production settings
+    - Never mix development and production credentials
+  </Step>
+
+  <Step title="Rotate keys regularly">
+    Periodically rotate API keys and secrets, especially after:
+    - Team member departures
+    - Suspected security incidents
+    - Every 90 days as a best practice
+  </Step>
+
+  <Step title="Use secret management in production">
+    For production deployments, use Vercel's environment variables feature or a dedicated secret management service like:
+    - AWS Secrets Manager
+    - HashiCorp Vault
+    - Doppler
+  </Step>
+</Steps>

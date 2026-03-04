@@ -1,0 +1,290 @@
+---
+title: "Clerk Authentication"
+description: "Secure user authentication and session management with Clerk"
+---
+
+## Overview
+
+PDF AI uses Clerk for user authentication, providing secure sign-in, sign-up, and session management. Clerk handles all authentication flows, user management, and protects routes from unauthorized access.
+
+## Configuration
+
+### Environment Variables
+
+Add your Clerk credentials to `.env`:
+
+```bash
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+```
+
+<Note>
+  Get your API keys from the [Clerk Dashboard](https://dashboard.clerk.com/)
+</Note>
+
+### Sign-In/Sign-Up URLs
+
+Configure authentication page routes:
+
+```bash
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/
+NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/
+```
+
+## Middleware Protection
+
+Clerk's middleware protects all routes except public ones (`src/middleware.ts:1-13`):
+
+```typescript
+import { authMiddleware } from "@clerk/nextjs";
+
+export default authMiddleware({
+  publicRoutes: ["/", "/api/webhook"],
+  // for stripe webhooks, we need to disable csrf protection
+});
+
+export const config = {
+  matcher: ["/((?!.*\\..*|_next).*)", "/", "/(api|trpc)(.*)"],
+};
+```
+
+### Public Routes
+
+The following routes are accessible without authentication:
+- `/` - Home page
+- `/api/webhook` - Webhook endpoints (for Stripe integration)
+
+<Info>
+  All other routes require authentication. Unauthenticated users are automatically redirected to the sign-in page.
+</Info>
+
+## Usage in Components
+
+### Server Components
+
+Use the `auth()` helper to get the current user's session (`src/app/page.tsx:15-24`):
+
+```typescript
+import { auth } from "@clerk/nextjs";
+
+export default async function Home() {
+  const { userId } = await auth();
+  const isAuth = !!userId;
+  
+  let firstChat;
+  if (userId) {
+    firstChat = await db.select().from(chats).where(eq(chats.userId, userId));
+    if (firstChat) {
+      firstChat = firstChat[0];
+    }
+  }
+  
+  // Render authenticated or unauthenticated UI
+}
+```
+
+### User Button Component
+
+Clerk provides a pre-built user profile button (`src/app/page.tsx:32`):
+
+```typescript
+import { UserButton } from "@clerk/nextjs";
+
+<UserButton afterSignOutUrl="/" />
+```
+
+<Note>
+  The `UserButton` displays the user's avatar and provides access to account settings and sign-out functionality.
+</Note>
+
+### Conditional Rendering
+
+Show different UI based on authentication status (`src/app/page.tsx:35-60`):
+
+```typescript
+{isAuth && firstChat && (
+  <Link href={`/chat/${firstChat.id}`}>
+    <Button className="border-2">Go to Chats</Button>
+  </Link>
+)}
+
+{isAuth ? (
+  <FileUpload />
+) : (
+  <Link href="/sign-in">
+    <Button>
+      Login to get Started!
+      <LogIn className="w-4 h-4 ml-2" />
+    </Button>
+  </Link>
+)}
+```
+
+## API Routes
+
+Protect API routes using Clerk's authentication:
+
+```typescript
+import { auth } from "@clerk/nextjs";
+import { NextResponse } from "next/server";
+
+export async function POST(req: Request) {
+  const { userId } = await auth();
+  
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  
+  // Handle authenticated request
+}
+```
+
+## User Identification
+
+Clerk provides a unique `userId` for each authenticated user:
+
+```typescript
+const { userId } = await auth();
+```
+
+This `userId` is used to:
+- Associate chats with users in the database
+- Check subscription status
+- Filter user-specific data
+
+## Webhook Integration
+
+Clerk can send webhooks for user lifecycle events:
+
+```typescript
+// Add /api/webhook to publicRoutes in middleware
+publicRoutes: ["/", "/api/webhook"]
+```
+
+<Warning>
+  Webhook endpoints must be public to receive events from Clerk's servers. Verify webhook signatures to ensure authenticity.
+</Warning>
+
+## Session Management
+
+Clerk automatically handles:
+- Session creation on sign-in
+- Session refresh tokens
+- Secure cookie management
+- Session expiration and renewal
+
+## Sign-In Flow
+
+1. User clicks "Login to get Started!" button
+2. Redirected to `/sign-in` page
+3. Clerk handles authentication (email, OAuth, etc.)
+4. After successful sign-in, user is redirected to `/`
+5. Session is established and `userId` is available
+
+## Components Reference
+
+### ClerkProvider
+
+Wrap your app with `ClerkProvider` in `app/layout.tsx`:
+
+```typescript
+import { ClerkProvider } from "@clerk/nextjs";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <ClerkProvider>
+      <html lang="en">
+        <body>{children}</body>
+      </html>
+    </ClerkProvider>
+  );
+}
+```
+
+### SignIn Component
+
+Create a sign-in page at `app/sign-in/[[...sign-in]]/page.tsx`:
+
+```typescript
+import { SignIn } from "@clerk/nextjs";
+
+export default function SignInPage() {
+  return <SignIn />;
+}
+```
+
+### SignUp Component
+
+Create a sign-up page at `app/sign-up/[[...sign-up]]/page.tsx`:
+
+```typescript
+import { SignUp } from "@clerk/nextjs";
+
+export default function SignUpPage() {
+  return <SignUp />;
+}
+```
+
+## Dependencies
+
+```json
+{
+  "@clerk/nextjs": "^4.x.x"
+}
+```
+
+## Best Practices
+
+- **Server-Side Auth**: Use `auth()` in Server Components for secure authentication checks
+- **Middleware Protection**: Apply `authMiddleware` to protect all routes by default
+- **Public Routes**: Explicitly list public routes to avoid blocking legitimate access
+- **Type Safety**: Use TypeScript to ensure `userId` null checks
+
+## Customization
+
+### Custom Sign-In Experience
+
+Customize Clerk's appearance to match your brand:
+
+```typescript
+import { dark } from "@clerk/themes";
+
+<ClerkProvider appearance={{ baseTheme: dark }}>
+  {children}
+</ClerkProvider>
+```
+
+### Additional User Data
+
+Access more user information:
+
+```typescript
+import { currentUser } from "@clerk/nextjs";
+
+const user = await currentUser();
+console.log(user?.emailAddresses[0].emailAddress);
+console.log(user?.firstName, user?.lastName);
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Redirect Loops**
+- Ensure `/sign-in` and `/sign-up` are in `publicRoutes` if you have custom pages
+- Check that environment variables are correctly set
+
+**Session Not Found**
+- Verify `CLERK_SECRET_KEY` is set in your environment
+- Clear browser cookies and try again
+
+**API Route 401 Errors**
+- Confirm the request includes authentication cookies
+- Check that the route is not in `publicRoutes` if it should be protected
+
+**Webhook Not Receiving Events**
+- Ensure `/api/webhook` is in `publicRoutes`
+- Verify webhook URL is correctly configured in Clerk Dashboard
+- Implement signature verification for security

@@ -1,0 +1,244 @@
+---
+title: "PDF Upload"
+description: "Upload and process PDF documents with automatic S3 storage and vector embeddings for AI-powered chat"
+---
+
+## Overview
+
+The PDF upload feature allows users to upload PDF documents up to 10MB in size. Once uploaded, PDFs are automatically stored in Amazon S3 and processed into vector embeddings using Pinecone for intelligent document search and retrieval.
+
+## How It Works
+
+<Steps>
+  <Step title="Select Your PDF">
+    Drag and drop a PDF file or click to browse. Only `.pdf` files are accepted, with a maximum size of 10MB.
+  </Step>
+  
+  <Step title="Upload to S3">
+    Your PDF is securely uploaded to Amazon S3 with a unique file key generated using a timestamp.
+  </Step>
+  
+  <Step title="Process & Embed">
+    The PDF is downloaded from S3, split into chunks, and converted into vector embeddings stored in Pinecone for semantic search.
+  </Step>
+  
+  <Step title="Create Chat">
+    A new chat session is created and linked to your PDF, allowing you to start asking questions immediately.
+  </Step>
+</Steps>
+
+## File Requirements
+
+<Info>
+  **Supported Format:** PDF files only (`.pdf`)
+  
+  **Maximum Size:** 10MB per file
+  
+  **Storage Region:** Asia Pacific (Mumbai) - `ap-south-1`
+</Info>
+
+## Upload Implementation
+
+The upload component uses `react-dropzone` for drag-and-drop functionality and AWS SDK for S3 uploads:
+
+```tsx src/components/ui/FileUpload.tsx
+const { getRootProps, getInputProps } = useDropzone({
+  accept: { "application/pdf": [".pdf"] },
+  maxFiles: 1,
+  onDrop: async (acceptedFiles) => {
+    const file = acceptedFiles[0];
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(
+        "File size too large. Please upload a file less than 10 MB."
+      );
+      return;
+    }
+    try {
+      setUploading(true);
+      const data = await uploadToS3(file);
+      if (!data?.file_key || !data?.file_name) {
+        toast.error("Error uploading file");
+        return;
+      }
+      mutate(data, {
+        onSuccess: ({ chat_id }) => {
+          toast.success("Chat created successfully! Redirecting...");
+          router.push(`/chat/${chat_id}`);
+        },
+      });
+    } catch (error) {
+      console.log(error);
+    } finally {
+      setUploading(false);
+    }
+  },
+});
+```
+
+## S3 Storage
+
+Uploaded PDFs are stored in Amazon S3 with automatic progress tracking:
+
+```typescript src/lib/s3.ts
+export async function uploadToS3(file: File) {
+  try {
+    AWS.config.update({
+      accessKeyId: process.env.NEXT_PUBLIC_S3_ACCESS_KEY_ID,
+      secretAccessKey: process.env.NEXT_PUBLIC_S3_SECRET_ACCESS_KEY,
+    });
+    const s3 = new AWS.S3({
+      params: {
+        Bucket: process.env.NEXT_PUBLIC_S3_BUCKET_NAME,
+      },
+      region: "ap-south-1",
+    });
+    const file_key =
+      "uploads/" + Date.now().toString() + file.name.replace(" ", "-");
+
+    const params = {
+      Bucket: process.env.NEXT_PUBLIC_S3_BUCKET_NAME!,
+      Key: file_key,
+      Body: file,
+    };
+
+    const upload = s3
+      .putObject(params)
+      .on("httpUploadProgress", (evt) => {
+        console.log(
+          "upload progress",
+          parseInt(((evt.loaded * 100) / evt.total).toString()) + "%"
+        );
+      })
+      .promise();
+
+    await upload.then((data) => {
+      toast.success("File uploaded successfully");
+    });
+
+    return Promise.resolve({
+      file_key,
+      file_name: file.name,
+    });
+  } catch (error) {
+    console.log("upload error", error);
+  }
+}
+```
+
+## Vector Embedding Process
+
+After upload, PDFs are processed and embedded into Pinecone for semantic search:
+
+```typescript src/lib/pinecone.ts
+export async function loadS3IntoPinecone(fileKey: string) {
+  // Download the PDF from S3
+  console.log("downloading from s3...");
+  const file_name = await downloadFromS3(fileKey);
+  if (!file_name) {
+    throw new Error("unable to download file from s3");
+  }
+  const loader = new PDFLoader(file_name);
+  const pages = (await loader.load()) as PDFPage[];
+  
+  // Split the document into smaller segments
+  const documents = await Promise.all(pages.map(prepareDocument));
+
+  // Vectorize and embed each document
+  const vectors = await Promise.all(documents.flat().map(embedDocument));
+
+  // Upload the vectors to Pinecone
+  const client = await getPineconeClient();
+  const pineconeIndex = await client.Index("aipdf");
+  const namespace = pineconeIndex.namespace(convertToAscii(fileKey));
+  console.log("uploading to pinecone...");
+
+  await namespace.upsert(vectors);
+  return documents[0];
+}
+```
+
+<Note>
+  Documents are split using `RecursiveCharacterTextSplitter` from LangChain and truncated to 36,000 bytes to meet Pinecone's metadata size limits.
+</Note>
+
+## Chat Creation API
+
+Once the PDF is processed, a chat session is created:
+
+```typescript src/app/api/create-chat/route.ts
+export async function POST(req: NextRequest, res: NextResponse) {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    return NextResponse.json(
+      { error: "Authentication error" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const body = await req.json();
+    const { file_key, file_name } = body;
+    
+    // Load PDF into Pinecone for vector search
+    await loadS3IntoPinecone(file_key);
+    
+    // Create chat record in database
+    const chat_id = await db
+      .insert(chats)
+      .values({
+        fileKey: file_key,
+        pdfName: file_name,
+        pdfUrl: getS3Url(file_key),
+        userId: userId,
+      })
+      .returning({
+        insertedId: chats.id,
+      });
+    return NextResponse.json(
+      { chat_id: chat_id[0].insertedId },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.log(error);
+    return NextResponse.json(
+      { error: "internal server error" },
+      { status: 500 }
+    );
+  }
+}
+```
+
+## Troubleshooting
+
+<Accordion title="File size exceeds 10MB">
+  The maximum file size is 10MB. Consider compressing your PDF or splitting it into smaller files. This limit ensures fast upload times and optimal processing performance.
+</Accordion>
+
+<Accordion title="Upload fails with authentication error">
+  Ensure you're logged in with a valid Clerk session. The upload process requires authentication to associate the PDF with your user account.
+</Accordion>
+
+<Accordion title="PDF processing takes too long">
+  Large PDFs with many pages may take 30-60 seconds to process as they are being:
+  1. Uploaded to S3
+  2. Downloaded for processing
+  3. Split into chunks
+  4. Converted to embeddings
+  5. Uploaded to Pinecone vector database
+</Accordion>
+
+<Warning>
+  PDF files with scanned images or complex formatting may have reduced accuracy in text extraction. For best results, use PDFs with selectable text.
+</Warning>
+
+## Environment Variables
+
+The following environment variables are required for PDF upload:
+
+```bash .env.local
+NEXT_PUBLIC_S3_ACCESS_KEY_ID=your_access_key
+NEXT_PUBLIC_S3_SECRET_ACCESS_KEY=your_secret_key
+NEXT_PUBLIC_S3_BUCKET_NAME=your_bucket_name
+PINECONE_API_KEY=your_pinecone_key
+PINECONE_ENVIRONMENT=your_pinecone_environment
+```

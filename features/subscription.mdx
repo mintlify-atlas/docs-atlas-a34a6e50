@@ -1,0 +1,328 @@
+---
+title: "Subscription"
+description: "Upgrade to Pro with Stripe-powered subscriptions for unlimited PDF access and premium features"
+---
+
+## Overview
+
+PDF AI offers a Pro subscription tier powered by Stripe, providing users with enhanced capabilities and unlimited document processing. The subscription system is fully integrated with Clerk authentication and uses webhooks for automatic subscription management.
+
+## Pricing Tiers
+
+<CardGroup cols={2}>
+  <Card title="Free Tier" icon="circle">
+    - Limited PDF uploads
+    - Basic chat functionality
+    - Standard support
+    - Community access
+  </Card>
+  <Card title="Pro Tier" icon="crown">
+    - **₹1,600/month** (INR)
+    - Unlimited PDF uploads
+    - Priority processing
+    - Advanced features
+    - Premium support
+  </Card>
+</CardGroup>
+
+<Info>
+  The Pro subscription is priced at **₹1,600 per month** (approximately $19 USD) and provides countless hours of time saved through unlimited document processing.
+</Info>
+
+## Subscription Features
+
+### Free vs Pro
+
+| Feature | Free | Pro |
+|---------|------|-----|
+| PDF Uploads | Limited | Unlimited |
+| File Size Limit | 10MB | 10MB |
+| Chat History | ✓ | ✓ |
+| Vector Search | ✓ | ✓ |
+| Processing Priority | Standard | High Priority |
+| Support | Community | Premium |
+
+## Stripe Integration
+
+The subscription system uses Stripe Checkout for new subscriptions and the Billing Portal for managing existing subscriptions:
+
+```typescript src/app/api/stripe/route.ts
+const return_url = process.env.NEXT_BASE_URL + "/";
+
+export async function GET() {
+  try {
+    const { userId } = await auth();
+    const user = await currentUser();
+
+    if (!userId) {
+      return new NextResponse("unauthorized", { status: 401 });
+    }
+
+    const _userSubscriptions = await db
+      .select()
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, userId));
+      
+    if (_userSubscriptions[0] && _userSubscriptions[0].stripeCustomerId) {
+      // Existing customer - redirect to billing portal
+      const stripeSession = await stripe.billingPortal.sessions.create({
+        customer: _userSubscriptions[0].stripeCustomerId,
+        return_url,
+      });
+      return NextResponse.json({ url: stripeSession.url });
+    }
+
+    // New customer - create checkout session
+    const stripeSession = await stripe.checkout.sessions.create({
+      success_url: return_url,
+      cancel_url: return_url,
+      payment_method_types: ["card"],
+      mode: "subscription",
+      billing_address_collection: "auto",
+      customer_email: user?.emailAddresses[0].emailAddress,
+      line_items: [
+        {
+          price_data: {
+            currency: "INR",
+            product_data: {
+              name: "Ai-PDF Pro",
+              description: 'countless hours of time saved',
+            },
+            unit_amount: 160000, // ₹1,600 in paise
+            recurring: {
+              interval: "month",
+            },
+          },
+          quantity: 1,
+        },
+      ],
+      metadata: {
+        userId,
+      },
+    });
+    return NextResponse.json({ url: stripeSession.url });
+  } catch (error) {
+    console.log(error);
+    return new NextResponse("internal server error", { status: 500 });
+  }
+}
+```
+
+<Note>
+  The Stripe integration automatically detects whether a user is subscribing for the first time or managing an existing subscription, routing them to the appropriate Stripe interface.
+</Note>
+
+## Subscription Button
+
+The subscription button dynamically changes based on the user's subscription status:
+
+```tsx src/components/SubscriptionButton.tsx
+const SubscriptionButton = (props: Props) => {
+  const [loading, setLoading] = React.useState(false);
+  const router = useRouter();
+  
+  const handleSubscription = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch("/api/stripe");
+      if (!response.ok) {
+        throw new Error("Error in fetching messages");
+      }
+      const data = (await response.json()) as {
+        url: string;
+      };
+
+      router.push(data.url);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return (
+    <Button disabled={loading} onClick={handleSubscription} variant="outline">
+      {props.isPro ? "Manage Subscriptions" : "Get Pro"}
+    </Button>
+  );
+};
+```
+
+## Checking Subscription Status
+
+The application checks subscription validity server-side:
+
+```typescript src/lib/subscription.ts
+export const checkSubscription = async () => {
+  const { userId } = await auth()
+  if (!userId) return false
+
+  const _userSubscriptions = await db
+    .select()
+    .from(userSubscriptions)
+    .where(eq(userSubscriptions.userId, userId));
+
+  if (!_userSubscriptions[0]) return false
+
+  const userSubscription = _userSubscriptions[0]
+
+  const isValid = 
+    userSubscription.stripePriceId && 
+    userSubscription.stripeCurrentPeriodEnd?.getTime()! + 1000 * 60 * 60 * 24 > Date.now()
+
+  return !!isValid
+}
+```
+
+<Info>
+  Subscription validity includes a **24-hour grace period** after the billing period ends to account for webhook delays and payment processing time.
+</Info>
+
+## Database Schema
+
+User subscriptions are stored with complete Stripe metadata:
+
+```typescript src/lib/db/schema.ts
+export const userSubscriptions = pgTable("user_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id", { length: 256 }).notNull().unique(),
+  stripeCustomerId: varchar("stripe_customer_id", { length: 256 })
+    .notNull()
+    .unique(),
+  stripeSubscriptionId: varchar("stripe_subscription_id", {
+    length: 256,
+  }).unique(),
+  stripePriceId: varchar("stripe_price_id", { length: 256 }),
+  stripeCurrentPeriodEnd: timestamp("stripe_current_period_ended_at"),
+});
+```
+
+## Webhook Handling
+
+Stripe webhooks automatically update subscription status in the database:
+
+<Steps>
+  <Step title="Webhook Event">
+    Stripe sends webhook events for subscription creation, updates, and cancellations to `/api/webhook`.
+  </Step>
+  
+  <Step title="Signature Verification">
+    The webhook handler verifies the Stripe signature to ensure the request is authentic.
+  </Step>
+  
+  <Step title="Database Update">
+    Subscription data is updated in the database including `stripeCustomerId`, `stripeSubscriptionId`, `stripePriceId`, and `stripeCurrentPeriodEnd`.
+  </Step>
+  
+  <Step title="User Access Update">
+    Pro features are automatically enabled or disabled based on subscription status.
+  </Step>
+</Steps>
+
+## Managing Your Subscription
+
+### For New Users
+
+1. Click the **"Get Pro"** button in the application
+2. You'll be redirected to Stripe Checkout
+3. Enter your payment details securely through Stripe
+4. Complete the checkout process
+5. You'll be redirected back to the application with Pro access enabled
+
+### For Existing Subscribers
+
+1. Click the **"Manage Subscriptions"** button
+2. You'll be redirected to the Stripe Billing Portal
+3. From there you can:
+   - Update payment methods
+   - View billing history
+   - Download invoices
+   - Cancel your subscription
+
+<Warning>
+  Cancelling your subscription will maintain Pro access until the end of your current billing period. After that, your account will revert to the free tier.
+</Warning>
+
+## Payment Methods
+
+Stripe Checkout supports all major payment methods:
+
+- Credit cards (Visa, Mastercard, American Express)
+- Debit cards
+- Additional local payment methods based on region
+
+## Security
+
+<CardGroup cols={2}>
+  <Card title="PCI Compliant" icon="shield-check">
+    All payment processing is handled by Stripe, a PCI Level 1 certified payment processor.
+  </Card>
+  <Card title="Secure Webhooks" icon="lock">
+    Webhook signature verification ensures only authentic Stripe events are processed.
+  </Card>
+  <Card title="No Stored Cards" icon="credit-card">
+    Payment information is never stored in the application database.
+  </Card>
+  <Card title="Clerk Auth" icon="key">
+    Subscription access is tied to authenticated Clerk user IDs.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<Accordion title="Payment failed during checkout">
+  If your payment fails, check that:
+  - Your card has sufficient funds
+  - Your card supports international transactions (if outside India)
+  - Your billing address is entered correctly
+  
+  Try using a different payment method or contact your bank if issues persist.
+</Accordion>
+
+<Accordion title="Pro features not activating after payment">
+  Webhook processing typically takes 1-2 seconds. If Pro features don't activate:
+  1. Wait 30 seconds and refresh the page
+  2. Log out and log back in
+  3. Check your email for payment confirmation from Stripe
+  
+  If issues persist after 5 minutes, contact support with your Stripe receipt.
+</Accordion>
+
+<Accordion title="Can't access billing portal">
+  The billing portal is only available to users who have an active or past subscription. If you're a new user, you'll see the "Get Pro" button instead.
+</Accordion>
+
+<Accordion title="How to cancel my subscription">
+  1. Click "Manage Subscriptions" in the app
+  2. Click "Cancel subscription" in the Stripe Billing Portal
+  3. Confirm the cancellation
+  
+  You'll retain Pro access until the end of your current billing period.
+</Accordion>
+
+## Environment Variables
+
+```bash .env.local
+STRIPE_API_KEY=your_stripe_secret_key
+STRIPE_WEBHOOK_SECRET=your_webhook_signing_secret
+NEXT_BASE_URL=https://yourdomain.com
+```
+
+<Note>
+  The `STRIPE_WEBHOOK_SECRET` is required for webhook signature verification and can be found in your Stripe Dashboard under Developers → Webhooks.
+</Note>
+
+## Billing Cycle
+
+- **Billing Period:** Monthly (30 days)
+- **Renewal:** Automatic on the same day each month
+- **Pro-rated Refunds:** Not available
+- **Grace Period:** 24 hours after period end
+- **Payment Retry:** Stripe automatically retries failed payments
+
+## Support
+
+For subscription and billing issues:
+- Check the Stripe Billing Portal for payment history
+- Review your email for Stripe payment receipts
+- Contact support with your Stripe customer ID for assistance

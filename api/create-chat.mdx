@@ -1,0 +1,240 @@
+---
+title: 'Create Chat'
+description: 'Create a new chat session from a PDF file for AI-powered conversations'
+---
+
+## Endpoint
+
+```
+POST /api/create-chat
+```
+
+Create a new chat session from a PDF file. This endpoint processes the PDF, generates vector embeddings, stores them in Pinecone, and creates a chat record in the database.
+
+<Warning>
+This endpoint requires authentication via Clerk. Ensure the user is authenticated before making this request.
+</Warning>
+
+## Authentication
+
+Requires a valid Clerk session. The endpoint extracts the `userId` from the authentication context.
+
+## Request Body
+
+<ParamField body="file_key" type="string" required>
+  The S3 file key for the uploaded PDF. This should be the key returned after uploading a file to S3.
+  
+  **Example**: `"uploads/user123/document-abc123.pdf"`
+</ParamField>
+
+<ParamField body="file_name" type="string" required>
+  The display name for the PDF file. This will be shown to users in the chat interface.
+  
+  **Example**: `"Q4 Financial Report.pdf"`
+</ParamField>
+
+## Response
+
+<ResponseField name="chat_id" type="number">
+  The unique identifier for the newly created chat session. Use this ID for subsequent chat operations.
+</ResponseField>
+
+### Success Response (200)
+
+```json
+{
+  "chat_id": 42
+}
+```
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error message describing what went wrong
+</ResponseField>
+
+### 401 Unauthorized
+
+Returned when the user is not authenticated:
+
+```json
+{
+  "error": "Authentication error"
+}
+```
+
+### 500 Internal Server Error
+
+Returned when PDF processing or database operations fail:
+
+```json
+{
+  "error": "internal server error"
+}
+```
+
+## Example Request
+
+<CodeGroup>
+
+```javascript JavaScript (Fetch)
+const response = await fetch('/api/create-chat', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    file_key: 'uploads/user123/document-abc123.pdf',
+    file_name: 'Q4 Financial Report.pdf'
+  })
+});
+
+const data = await response.json();
+console.log('Chat ID:', data.chat_id);
+```
+
+```typescript TypeScript
+interface CreateChatRequest {
+  file_key: string;
+  file_name: string;
+}
+
+interface CreateChatResponse {
+  chat_id: number;
+}
+
+const createChat = async (fileKey: string, fileName: string): Promise<number> => {
+  const response = await fetch('/api/create-chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      file_key: fileKey,
+      file_name: fileName
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error);
+  }
+
+  const data: CreateChatResponse = await response.json();
+  return data.chat_id;
+};
+
+// Usage
+try {
+  const chatId = await createChat(
+    'uploads/user123/document-abc123.pdf',
+    'Q4 Financial Report.pdf'
+  );
+  console.log('Created chat:', chatId);
+} catch (error) {
+  console.error('Failed to create chat:', error);
+}
+```
+
+```python Python
+import requests
+
+url = 'https://your-domain.com/api/create-chat'
+headers = {
+    'Content-Type': 'application/json'
+}
+data = {
+    'file_key': 'uploads/user123/document-abc123.pdf',
+    'file_name': 'Q4 Financial Report.pdf'
+}
+
+response = requests.post(url, json=data, headers=headers)
+
+if response.status_code == 200:
+    result = response.json()
+    print(f"Chat ID: {result['chat_id']}")
+else:
+    error = response.json()
+    print(f"Error: {error['error']}")
+```
+
+```bash cURL
+curl -X POST https://your-domain.com/api/create-chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "file_key": "uploads/user123/document-abc123.pdf",
+    "file_name": "Q4 Financial Report.pdf"
+  }'
+```
+
+</CodeGroup>
+
+## Example Response
+
+```json
+{
+  "chat_id": 42
+}
+```
+
+## How It Works
+
+1. **Authentication Check**: Verifies the user is authenticated via Clerk
+2. **PDF Processing**: Downloads the PDF from S3 using the `file_key`
+3. **Text Extraction**: Extracts text content from the PDF
+4. **Chunking**: Splits the text into manageable chunks for embedding
+5. **Embedding**: Generates vector embeddings using OpenAI's embedding model
+6. **Vector Storage**: Stores embeddings in Pinecone for semantic search
+7. **Database Record**: Creates a chat record in the database with:
+   - `fileKey`: S3 file key
+   - `pdfName`: Display name
+   - `pdfUrl`: Public S3 URL for the PDF
+   - `userId`: Authenticated user's ID
+8. **Response**: Returns the newly created chat ID
+
+<Note>
+The PDF processing and embedding generation may take 10-30 seconds depending on document size. Consider implementing a loading state or webhook for completion notifications.
+</Note>
+
+## Chat Record Schema
+
+When a chat is created, the following data is stored:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | integer | Unique chat identifier (auto-generated) |
+| `pdfName` | string | Display name of the PDF |
+| `pdfUrl` | string | S3 URL for accessing the PDF |
+| `fileKey` | string | S3 file key |
+| `userId` | string | Clerk user ID (max 255 chars) |
+| `createdAt` | timestamp | Chat creation timestamp |
+
+## Prerequisites
+
+Before calling this endpoint:
+
+1. **User Authentication**: Ensure the user is signed in via Clerk
+2. **PDF Upload**: Upload the PDF to S3 and obtain the `file_key`
+3. **S3 Configuration**: Verify S3 bucket permissions allow the API to read the file
+4. **Pinecone Setup**: Ensure Pinecone index is configured and accessible
+
+## Best Practices
+
+- Validate the PDF file before uploading to S3
+- Use descriptive `file_name` values for better UX
+- Store the returned `chat_id` in your application state
+- Implement error handling for failed PDF processing
+- Consider file size limits (recommend max 50MB PDFs)
+- Show upload progress and processing status to users
+
+<Tip>
+For large PDFs, consider implementing a job queue system to handle processing asynchronously and notify users when the chat is ready.
+</Tip>
+
+## Related Operations
+
+After creating a chat:
+
+1. Use the returned `chat_id` to send messages via `/api/chat`
+2. Retrieve message history via `/api/get-messages`
+3. Display the PDF using the stored `pdfUrl`

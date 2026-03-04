@@ -1,0 +1,328 @@
+---
+title: 'Troubleshooting Guide'
+description: 'Solutions to common issues with PDF uploads, chat functionality, and subscriptions'
+---
+
+## PDF Upload Issues
+
+### File Size Too Large Error
+
+<Warning>
+**Error Message:** "File size too large. Please upload a file less than 10 MB."
+</Warning>
+
+This error occurs when your PDF exceeds the 10 MB limit enforced in `src/components/ui/FileUpload.tsx:38`.
+
+**Solutions:**
+- Compress your PDF using online tools or PDF editing software
+- Split large documents into smaller PDFs
+- Remove high-resolution images or compress images within the PDF
+- Ensure your file is actually under 10 MB (check file properties)
+
+### Upload Fails Without Error
+
+**Symptoms:** The upload appears to start but fails silently or gets stuck.
+
+**Common Causes:**
+1. **Network timeout** - Check your internet connection
+2. **S3 configuration issues** - Verify AWS credentials are set correctly
+3. **File corruption** - Try opening the PDF locally to ensure it's not corrupted
+4. **Browser issues** - Clear cache and cookies, or try a different browser
+
+**Solutions:**
+<Steps>
+  <Step title="Check file integrity">
+    Open the PDF in a PDF reader to confirm it's not corrupted
+  </Step>
+  <Step title="Refresh the page">
+    Hard refresh your browser (Ctrl+Shift+R or Cmd+Shift+R)
+  </Step>
+  <Step title="Try again">
+    Re-attempt the upload after a few minutes
+  </Step>
+</Steps>
+
+### Invalid File Format
+
+<Note>
+Only PDF files with the `.pdf` extension are accepted. The upload component enforces this in `src/components/ui/FileUpload.tsx:34`.
+</Note>
+
+**Solutions:**
+- Ensure your file has a `.pdf` extension
+- Convert other document formats (Word, Excel, etc.) to PDF first
+- Avoid renaming files from other formats to `.pdf` - use proper conversion
+
+### "Error uploading file" Toast Message
+
+This generic error indicates an issue during the S3 upload process.
+
+**Debugging Steps:**
+1. Check browser console for detailed error messages (F12 → Console tab)
+2. Verify you're logged in (authentication required)
+3. Ensure AWS S3 configuration is correct
+4. Try uploading a different, smaller PDF to isolate the issue
+
+## Chat Issues
+
+### "Error in creating chat" Message
+
+<Warning>
+This error occurs during chat creation after successful PDF upload (API endpoint: `/api/create-chat`).
+</Warning>
+
+**Common Causes:**
+- Pinecone vectorization failed
+- Database connection issues
+- Authentication token expired
+- S3 file key mismatch
+
+**Solutions:**
+1. **Re-upload the PDF** - Start the process from scratch
+2. **Check authentication** - Log out and log back in
+3. **Wait a moment** - Server might be processing; try again in 30 seconds
+4. **Contact support** - If issue persists, provide your user ID and timestamp
+
+### AI Responses Are Slow or Timing Out
+
+**Possible Causes:**
+- GPT-4 API rate limits
+- Large PDF with complex queries
+- Network latency
+- High server load
+
+**Solutions:**
+<Tip>
+Complex questions about large documents may take 10-30 seconds to process. This is normal.
+</Tip>
+
+- Be patient with initial responses (GPT-4 uses streaming)
+- Simplify your questions for faster responses
+- Avoid asking multiple questions simultaneously
+- Check your internet connection speed
+
+### AI Says "I don't know" for Questions You Know Are in the PDF
+
+**Why This Happens:**
+The AI retrieves context using semantic search. Sometimes:
+- The phrasing doesn't match the document's language
+- Information is in images or tables (not extracted as text)
+- The PDF has poor OCR quality
+- Context window doesn't capture the relevant section
+
+**Solutions:**
+- Rephrase your question using terms from the document
+- Ask more specific questions with context
+- Ensure your PDF contains selectable text (not just scanned images)
+- Break complex questions into smaller parts
+
+### Chat History Not Loading
+
+**Symptoms:** Previous messages don't appear or chat seems empty.
+
+**Solutions:**
+1. Refresh the page - Messages load from database on page load
+2. Check you're viewing the correct chat - Use sidebar to navigate
+3. Verify authentication - Session might have expired
+4. Clear browser cache if issue persists
+
+## Subscription & Billing Issues
+
+### "Get Pro" Button Not Working
+
+**Symptoms:** Clicking the button does nothing or shows an error.
+
+**Common Causes:**
+- Network issues preventing Stripe session creation
+- Authentication problems
+- Stripe configuration issues
+
+**Solutions:**
+<Steps>
+  <Step title="Check browser console">
+    Press F12 and look for error messages in the Console tab
+  </Step>
+  <Step title="Verify login status">
+    Ensure you're logged in and session is active
+  </Step>
+  <Step title="Try different browser">
+    Test in incognito mode or another browser
+  </Step>
+  <Step title="Contact support">
+    If issue persists, provide error details to support team
+  </Step>
+</Steps>
+
+### Payment Fails During Checkout
+
+<Info>
+Payment processing is handled securely by Stripe. PDF AI uses INR currency with monthly billing.
+</Info>
+
+**Common Issues:**
+- Card declined by bank
+- Insufficient funds
+- Card doesn't support international transactions
+- 3D Secure authentication failed
+
+**Solutions:**
+- Verify card details are entered correctly
+- Ensure your card supports online payments
+- Contact your bank to authorize the transaction
+- Try a different payment method
+- Check if your card supports INR transactions
+
+### Subscription Status Not Updating After Payment
+
+**Why This Happens:**
+Webhook delays between Stripe and the application can cause temporary sync issues.
+
+**Timeline:**
+- Normal processing: Instant to 2 minutes
+- Webhook retry: Up to 30 minutes
+
+**Solutions:**
+1. **Wait 5 minutes** - Refresh the page and check again
+2. **Check email** - Stripe sends confirmation emails
+3. **Verify payment** - Check your bank/card statement
+4. **Log out and back in** - Forces session refresh
+5. **Contact support** - If not resolved after 1 hour
+
+### Can't Access Billing Portal
+
+**Symptoms:** "Manage Subscriptions" button doesn't work or shows error.
+
+**Requirements:**
+- You must have an active subscription
+- Must be logged in with the same account used for payment
+- Stripe customer ID must exist in database
+
+**Solutions:**
+- Verify you have an active subscription
+- Check you're logged in to the correct account
+- Clear cookies and re-authenticate
+- Contact support if you recently subscribed
+
+### Subscription Cancelled But Still Charged
+
+<Warning>
+Subscription cancellations take effect at the end of the current billing period. You retain access until then.
+</Warning>
+
+**What to Know:**
+- Cancellation is immediate, but access continues until period end
+- You won't be charged for the next billing cycle
+- Partial refunds are not automatic
+
+**If incorrectly charged:**
+1. Check the cancellation date in billing portal
+2. Verify the charge date matches your billing cycle
+3. Contact support with transaction details for refund requests
+
+## Authentication Issues
+
+### "Unauthorized" Error (401)
+
+This occurs when API requests are made without valid authentication.
+
+**Common Scenarios:**
+- Session expired
+- Not logged in
+- Cookie issues
+- Clerk authentication failed
+
+**Solutions:**
+- Log out completely and log back in
+- Clear browser cookies for the site
+- Check if third-party cookies are enabled
+- Try in incognito mode to rule out extensions
+
+### Logged Out Unexpectedly
+
+**Causes:**
+- Session timeout
+- Browser cleared cookies
+- Multiple tabs/windows causing conflicts
+
+**Prevention:**
+- Stay active on the platform
+- Avoid clearing cookies while using the app
+- Use a single tab/window for the application
+
+## Database & Data Issues
+
+### Chat Missing from Sidebar
+
+**Possible Reasons:**
+- Chat was created under a different account
+- Database sync delay
+- Chat creation actually failed (check for error toast)
+
+**Solutions:**
+1. Refresh the page to reload chat list
+2. Verify you're logged in to the correct account
+3. Check if the PDF upload completed successfully
+4. Re-upload if necessary
+
+### PDF Viewer Not Displaying
+
+**Common Causes:**
+- S3 URL access issues
+- CORS configuration problems
+- PDF file corruption
+- Browser PDF rendering issues
+
+**Solutions:**
+- Try a different browser
+- Check browser console for CORS errors
+- Ensure browser can display PDFs natively
+- Re-upload the PDF if consistently failing
+
+## General Troubleshooting Steps
+
+When experiencing any issue:
+
+<Steps>
+  <Step title="Check browser console">
+    Press F12 → Console tab to see detailed error messages
+  </Step>
+  <Step title="Verify authentication">
+    Ensure you're logged in and session is active
+  </Step>
+  <Step title="Clear cache">
+    Hard refresh (Ctrl+Shift+R) or clear browser cache
+  </Step>
+  <Step title="Try different browser">
+    Test in Chrome, Firefox, or Safari to isolate browser-specific issues
+  </Step>
+  <Step title="Check internet connection">
+    Ensure stable connection for uploads and chat streaming
+  </Step>
+  <Step title="Wait and retry">
+    Some issues resolve with temporary server issues; wait 5-10 minutes
+  </Step>
+</Steps>
+
+<Note>
+If you've tried all relevant troubleshooting steps and the issue persists, contact support with:
+- Description of the issue
+- Browser and version
+- Screenshots of errors
+- Your user ID or email
+- Timestamp when issue occurred
+</Note>
+
+## Error Code Reference
+
+| Error Code | Meaning | Location |
+|------------|---------|----------|
+| 401 | Unauthorized - authentication required | Multiple API routes |
+| 404 | Chat not found | `/api/chat` |
+| 500 | Internal server error | Multiple API routes |
+
+## Still Need Help?
+
+If your issue isn't covered here:
+- Check the [FAQ](/resources/faq) for additional information
+- Review the [API documentation](/api-reference) for technical details
+- Contact support with detailed information about your issue

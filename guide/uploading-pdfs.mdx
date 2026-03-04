@@ -1,0 +1,156 @@
+---
+title: Uploading PDFs
+description: Learn how to upload PDF files to PDF AI and start chatting with your documents
+---
+
+# Uploading PDFs
+
+PDF AI makes it simple to upload your PDF documents and start extracting insights from them. This guide will walk you through the upload process step by step.
+
+## Before You Begin
+
+<Note>
+You must be signed in to upload PDFs. If you haven't created an account yet, click the "Login to get Started!" button on the homepage.
+</Note>
+
+## Upload Requirements
+
+<Warning>
+**File Size Limit**: PDF files must be under 10 MB in size. Files exceeding this limit will be rejected with an error message.
+</Warning>
+
+### Supported Format
+- **File Type**: PDF only (`.pdf` extension)
+- **Max Files**: One file at a time
+- **Max Size**: 10 MB per file
+
+## How to Upload a PDF
+
+<Steps>
+  <Step title="Access the Upload Area">
+    Navigate to the homepage after signing in. You'll see a file upload area with a dashed border and an inbox icon.
+  </Step>
+
+  <Step title="Choose Your Upload Method">
+    You have two options to upload your PDF:
+    
+    **Option 1: Drag and Drop**
+    - Drag your PDF file from your computer
+    - Drop it into the upload area
+    
+    **Option 2: Click to Browse**
+    - Click anywhere in the upload area
+    - Select your PDF file from the file browser
+  </Step>
+
+  <Step title="Wait for Processing">
+    Once you drop or select a file:
+    - The upload area will show a loading spinner
+    - You'll see the message "GPT is going through your PDF..."
+    - The system uploads your file to secure cloud storage
+    - AI processes and indexes your document content
+  </Step>
+
+  <Step title="Automatic Redirection">
+    When processing completes:
+    - You'll see a success message: "Chat created successfully! Redirecting..."
+    - You'll be automatically redirected to the chat interface
+    - Your PDF will be ready for questions
+  </Step>
+</Steps>
+
+## What Happens Behind the Scenes
+
+When you upload a PDF, several automated processes occur:
+
+1. **File Validation**: The system checks file size and format
+2. **Cloud Upload**: Your PDF is securely uploaded to AWS S3 storage
+3. **AI Processing**: The document is processed and vectorized using Pinecone
+4. **Chat Creation**: A new chat session is created in the database
+5. **Indexing**: Content is indexed for fast semantic search
+
+<Info>
+The upload and processing typically takes 10-30 seconds depending on the size and complexity of your PDF.
+</Info>
+
+## Code Example
+
+Here's how the upload functionality works in the application:
+
+```tsx FileUpload.tsx
+import { uploadToS3 } from "@/lib/s3";
+import { useDropzone } from "react-dropzone";
+
+const { getRootProps, getInputProps } = useDropzone({
+  accept: { "application/pdf": [".pdf"] },
+  maxFiles: 1,
+  onDrop: async (acceptedFiles) => {
+    const file = acceptedFiles[0];
+    
+    // Validate file size (10 MB limit)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(
+        "File size too large. Please upload a file less than 10 MB."
+      );
+      return;
+    }
+    
+    // Upload to S3
+    const data = await uploadToS3(file);
+    
+    // Create chat session
+    const response = await fetch("/api/create-chat", {
+      method: "POST",
+      body: JSON.stringify({ 
+        file_key: data.file_key, 
+        file_name: data.file_name 
+      }),
+    });
+  },
+});
+```
+
+## Troubleshooting
+
+<Accordion title="Error: File size too large">
+  Your PDF exceeds the 10 MB limit. Try:
+  - Compressing your PDF using online tools
+  - Splitting large documents into smaller sections
+  - Removing high-resolution images if possible
+</Accordion>
+
+<Accordion title="Error uploading file">
+  This indicates a problem with the upload to cloud storage. Try:
+  - Checking your internet connection
+  - Refreshing the page and trying again
+  - Ensuring the PDF file isn't corrupted
+</Accordion>
+
+<Accordion title="Error creating chat">
+  The chat session couldn't be created. This might be due to:
+  - Database connection issues
+  - Authentication problems (try signing out and back in)
+  - Server issues (wait a moment and retry)
+</Accordion>
+
+<Accordion title="Upload stuck on processing">
+  If the upload spinner runs for more than 2 minutes:
+  - Refresh the page
+  - Check if the chat was created (look for it in your chat list)
+  - Try uploading again with a smaller file
+</Accordion>
+
+## Next Steps
+
+<Tip>
+Once your PDF is uploaded successfully, you'll be automatically taken to the chat interface. Learn how to effectively chat with your PDF in the next guide.
+</Tip>
+
+<CardGroup cols={2}>
+  <Card title="Chatting with PDFs" icon="comments" href="/guide/chatting-with-pdfs">
+    Learn how to ask questions and get insights from your uploaded PDFs
+  </Card>
+  <Card title="Managing Subscriptions" icon="credit-card" href="/guide/managing-subscriptions">
+    Upgrade to Pro for unlimited uploads and advanced features
+  </Card>
+</CardGroup>

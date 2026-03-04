@@ -1,0 +1,118 @@
+---
+title: 'API Overview'
+description: 'Introduction to the PDF AI API - chat with your PDF documents using AI-powered natural language processing'
+---
+
+## Introduction
+
+The PDF AI API allows you to create AI-powered chat sessions with your PDF documents. Upload a PDF, create a chat session, and interact with your document content through natural language conversations powered by GPT-4 and semantic search.
+
+## Base URL
+
+All API endpoints are relative to your deployment URL:
+
+```
+https://your-domain.com/api
+```
+
+## Authentication
+
+The API uses Clerk authentication for user management. Most endpoints require a valid authentication token:
+
+- **Create Chat**: Requires authentication (Clerk userId)
+- **Chat**: No authentication required (uses chatId for authorization)
+- **Get Messages**: No authentication required (uses chatId for authorization)
+
+<Warning>
+The `/api/create-chat` endpoint requires authentication. Ensure you include valid Clerk session credentials in your requests.
+</Warning>
+
+## Core Concepts
+
+### Chats
+
+A chat represents a conversation session with a specific PDF document. Each chat is associated with:
+- A PDF file stored in S3
+- Vector embeddings stored in Pinecone for semantic search
+- A collection of messages exchanged between the user and AI
+
+### Messages
+
+Messages are the individual exchanges within a chat. Each message has:
+- **role**: Either `user` (human input) or `system` (AI response)
+- **content**: The text content of the message
+- **chatId**: Reference to the parent chat session
+
+### Context Retrieval
+
+The API uses RAG (Retrieval-Augmented Generation) to provide relevant responses:
+1. User query is embedded using OpenAI embeddings
+2. Similar content is retrieved from Pinecone vector store
+3. Retrieved context is injected into the GPT-4 prompt
+4. AI generates a response based on the PDF content
+
+## API Endpoints
+
+<CardGroup cols={2}>
+  <Card title="Create Chat" icon="plus" href="/api/create-chat">
+    Create a new chat session from an uploaded PDF
+  </Card>
+  <Card title="Chat" icon="comments" href="/api/chat">
+    Send messages and receive AI responses (streaming)
+  </Card>
+  <Card title="Get Messages" icon="list" href="/api/messages">
+    Retrieve message history for a chat session
+  </Card>
+</CardGroup>
+
+## Response Format
+
+All non-streaming API endpoints return JSON responses.
+
+### Success Response
+
+```json
+{
+  "data": {
+    // Response data
+  }
+}
+```
+
+### Error Response
+
+```json
+{
+  "error": "Error message description"
+}
+```
+
+## Error Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| 200 | Success |
+| 401 | Authentication error - invalid or missing credentials |
+| 404 | Resource not found (e.g., chat doesn't exist) |
+| 500 | Internal server error |
+
+## Rate Limits
+
+<Note>
+Rate limits depend on your deployment configuration and OpenAI API quota. Monitor your usage to avoid hitting limits.
+</Note>
+
+## Edge Runtime
+
+The Chat and Get Messages endpoints run on Vercel's Edge Runtime for optimal performance and low latency worldwide.
+
+## Getting Started
+
+1. **Upload a PDF** to S3 and obtain a `file_key`
+2. **Create a chat** using the `/api/create-chat` endpoint
+3. **Send messages** using the `/api/chat` endpoint
+4. **Retrieve history** using the `/api/get-messages` endpoint
+
+<Tip>
+For best results, ensure your PDFs are text-based and properly formatted. Scanned documents may require OCR preprocessing.
+</Tip>

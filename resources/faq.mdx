@@ -1,0 +1,137 @@
+---
+title: 'Frequently Asked Questions'
+description: 'Common questions about PDF AI and answers to help you get started'
+---
+
+## General Questions
+
+<Accordion title="What is PDF AI?">
+PDF AI is an intelligent document assistant that allows you to chat with your PDF documents using AI-powered natural language processing. Upload your PDF and ask questions to get instant answers extracted from your document content.
+</Accordion>
+
+<Accordion title="How does PDF AI work?">
+When you upload a PDF:
+1. The document is securely stored in AWS S3
+2. Content is extracted and split into smaller segments
+3. Text is converted into vector embeddings using OpenAI
+4. Vectors are stored in Pinecone for semantic search
+5. When you ask questions, the AI retrieves relevant context and generates accurate answers using GPT-4
+</Accordion>
+
+<Accordion title="What file formats are supported?">
+Currently, PDF AI supports PDF files only. The file must:
+- Be in PDF format (.pdf extension)
+- Be less than 10 MB in size
+- Contain extractable text (not just images)
+</Accordion>
+
+<Accordion title="Is there a file size limit?">
+Yes, the maximum file size is 10 MB per PDF. If you need to upload larger files, consider:
+- Splitting your PDF into smaller documents
+- Compressing the PDF
+- Upgrading to Pro for enhanced features
+</Accordion>
+
+## Features & Functionality
+
+<Accordion title="How many PDFs can I upload?">
+Free users can upload and chat with PDFs. Pro subscribers get unlimited PDF uploads and additional features. Check our [pricing page](/resources/pricing) for detailed plan comparisons.
+</Accordion>
+
+<Accordion title="Can I chat with multiple PDFs at once?">
+Currently, each chat session is linked to a single PDF document. You can create multiple chat sessions for different PDFs and switch between them using the chat sidebar.
+</Accordion>
+
+<Accordion title="What AI model powers the chat feature?">
+PDF AI uses OpenAI's GPT-4-1106-preview model for generating responses. This ensures high-quality, contextually accurate answers based on your PDF content.
+</Accordion>
+
+<Accordion title="Can the AI access information outside my PDF?">
+No. The AI is specifically designed to answer questions based only on the content within your uploaded PDF. If the context doesn't provide an answer, the AI will indicate it doesn't know rather than making up information.
+</Accordion>
+
+## Account & Authentication
+
+<Accordion title="Do I need an account to use PDF AI?">
+Yes, you need to create an account to upload PDFs and use the chat feature. Authentication is handled securely through Clerk, ensuring your data and conversations remain private.
+</Accordion>
+
+<Accordion title="How do I sign up?">
+Click the "Sign Up" button on the homepage and follow the registration process. You can sign up using your email address or social authentication providers supported by Clerk.
+</Accordion>
+
+<Accordion title="Can I delete my chat history?">
+Yes, you can manage your chat sessions through the chat sidebar. Each PDF upload creates a new chat that can be accessed or removed as needed.
+</Accordion>
+
+## Subscription & Billing
+
+<Accordion title="What's included in the free plan?">
+The free plan allows you to:
+- Upload PDFs (up to 10 MB each)
+- Create chat sessions with your documents
+- Ask questions and get AI-powered answers
+- View your chat history
+</Accordion>
+
+<Accordion title="What are the benefits of PDF AI Pro?">
+PDF AI Pro offers enhanced features including:
+- Unlimited PDF uploads
+- Priority processing
+- Advanced chat capabilities
+- Extended storage
+
+See the [pricing page](/resources/pricing) for complete details.
+</Accordion>
+
+<Accordion title="How do I upgrade to Pro?">
+Click the "Get Pro" button in your dashboard to access the Stripe checkout page. Subscriptions are billed monthly and can be managed through the Stripe billing portal.
+</Accordion>
+
+<Accordion title="Can I cancel my subscription anytime?">
+Yes, you can cancel your Pro subscription at any time through the billing portal. Click "Manage Subscriptions" in your account to access cancellation options.
+</Accordion>
+
+## Privacy & Security
+
+<Accordion title="Is my data secure?">
+Yes, PDF AI takes security seriously:
+- All PDFs are stored securely in AWS S3
+- Authentication is handled by Clerk with industry-standard security
+- Payment processing is secured through Stripe
+- Your chat history is private and linked to your account only
+</Accordion>
+
+<Accordion title="Who can see my uploaded PDFs?">
+Only you can access your uploaded PDFs and chat sessions. Each document and conversation is tied to your user account and is not shared with other users.
+</Accordion>
+
+<Accordion title="Do you train AI models on my PDFs?">
+No, your PDFs are used solely for generating responses to your questions. We do not use your documents to train AI models or share them with third parties.
+</Accordion>
+
+## Technical Questions
+
+<Accordion title="What technology stack does PDF AI use?">
+PDF AI is built with:
+- Next.js for the web application
+- OpenAI GPT-4 for natural language processing
+- Pinecone for vector storage and semantic search
+- AWS S3 for secure file storage
+- Stripe for payment processing
+- Clerk for authentication
+</Accordion>
+
+<Accordion title="Why does processing take time after upload?">
+After uploading, PDF AI needs to:
+1. Download and parse your PDF
+2. Extract and split the text into segments
+3. Generate vector embeddings for each segment
+4. Upload vectors to Pinecone
+
+This ensures fast, accurate responses when you start chatting.
+</Accordion>
+
+<Accordion title="Can I integrate PDF AI into my application?">
+Currently, PDF AI is available as a web application. If you're interested in API access or integration options, please contact support for more information.
+</Accordion>
